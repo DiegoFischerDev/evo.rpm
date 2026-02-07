@@ -126,6 +126,12 @@ function isCommand(text, variants) {
   return variants.includes(t);
 }
 
+// Deteta "boa sorte!" ou "boa sorte" (normalizado) para desativar modo falar_com_rafa
+function isBoaSorteMessage(text) {
+  const t = normalizeText(text);
+  return t === 'boa sorte!' || t === 'boa sorte';
+}
+
 async function sendText(instanceName, remoteJid, text) {
   if (!EVOLUTION_URL || !EVOLUTION_API_KEY) {
     console.warn('EVOLUTION_API_URL ou EVOLUTION_API_KEY não configuradas – resposta não enviada');
@@ -226,7 +232,6 @@ async function handleIncomingMessage({ remoteJid, text, instanceName, profileNam
       remoteJid,
       nome: firstName,
       origemInstancia: instanceName,
-      estado: 'aguardando_escolha',
     });
 
     const saudacaoNome = firstName ? `Oi ${firstName}, tudo bem?\n` : 'Oi, tudo bem?\n';
@@ -241,10 +246,10 @@ async function handleIncomingMessage({ remoteJid, text, instanceName, profileNam
 
   const lead = existingLead;
 
-  // Estados
-  if (lead.estado === 'aguardando_escolha') {
+  // Estados: estado_conversa (aguardando_escolha | com_joana | com_gestora | com_rafa) + estado_docs (aguardando_docs | sem_docs | docs_enviados)
+  if (lead.estado_conversa === 'aguardando_escolha') {
     if (isCommand(text, CMD_DUVIDA)) {
-      await db.updateLeadState(lead.id, 'em_conversa');
+      await db.updateLeadState(lead.id, { conversa: 'com_joana' });
       await sendText(
         instanceName,
         remoteJid,
@@ -253,7 +258,7 @@ async function handleIncomingMessage({ remoteJid, text, instanceName, profileNam
       return;
     }
     if (isCommand(text, CMD_GESTORA)) {
-      await db.updateLeadState(lead.id, 'aguardando_docs');
+      await db.updateLeadState(lead.id, { conversa: 'com_gestora', docs: 'aguardando_docs' });
       const uploadLink = `${process.env.UPLOAD_BASE_URL || 'https://ia.rafaapelomundo.com'}/upload/${lead.id}`;
       await sendText(
         instanceName,
@@ -263,7 +268,7 @@ async function handleIncomingMessage({ remoteJid, text, instanceName, profileNam
       return;
     }
     if (isCommand(text, CMD_FALAR_COM_RAFA)) {
-      await db.updateLeadState(lead.id, 'falar_com_rafa', { estado_anterior: lead.estado });
+      await db.updateLeadState(lead.id, { conversa: 'com_rafa' });
       await sendText(
         instanceName,
         remoteJid,
@@ -274,7 +279,6 @@ async function handleIncomingMessage({ remoteJid, text, instanceName, profileNam
       );
       return;
     }
-    // Se escreveu outra coisa, repetir instruções
     await sendText(
       instanceName,
       remoteJid,
@@ -283,11 +287,10 @@ async function handleIncomingMessage({ remoteJid, text, instanceName, profileNam
     return;
   }
 
-  if (lead.estado === 'em_conversa' || lead.estado === 'docs_enviados' || lead.estado === 'aguardando_docs') {
-    // Comandos de navegação dentro da conversa
+  if (lead.estado_conversa === 'com_joana' || lead.estado_docs === 'docs_enviados' || (lead.estado_conversa === 'com_gestora' && lead.estado_docs === 'aguardando_docs')) {
     if (isCommand(text, CMD_GESTORA)) {
-      if (lead.estado !== 'docs_enviados') {
-        await db.updateLeadState(lead.id, 'aguardando_docs');
+      if (lead.estado_docs !== 'docs_enviados') {
+        await db.updateLeadState(lead.id, { conversa: 'com_gestora', docs: 'aguardando_docs' });
       }
       const uploadLink = `${process.env.UPLOAD_BASE_URL || 'https://ia.rafaapelomundo.com'}/upload/${lead.id}`;
       await sendText(
@@ -298,7 +301,7 @@ async function handleIncomingMessage({ remoteJid, text, instanceName, profileNam
       return;
     }
     if (isCommand(text, CMD_FALAR_COM_RAFA)) {
-      await db.updateLeadState(lead.id, 'falar_com_rafa', { estado_anterior: lead.estado });
+      await db.updateLeadState(lead.id, { conversa: 'com_rafa' });
       await sendText(
         instanceName,
         remoteJid,
@@ -310,7 +313,6 @@ async function handleIncomingMessage({ remoteJid, text, instanceName, profileNam
       return;
     }
 
-    // Limite de 10 perguntas por lead para economizar tokens
     const leadKey = String(lead.id);
     aiQuestionCountByLead[leadKey] = (aiQuestionCountByLead[leadKey] || 0) + 1;
     if (aiQuestionCountByLead[leadKey] > 10) {
@@ -322,9 +324,8 @@ async function handleIncomingMessage({ remoteJid, text, instanceName, profileNam
       return;
     }
 
-    // IA tira dúvidas; em aguardando_docs reforça o link no prompt/mensagem
     await answerWithAI(lead, text, instanceName);
-    if (lead.estado === 'aguardando_docs') {
+    if (lead.estado_conversa === 'com_gestora' && lead.estado_docs === 'aguardando_docs') {
       const uploadLink = `${process.env.UPLOAD_BASE_URL || 'https://ia.rafaapelomundo.com'}/upload/${lead.id}`;
       await sendText(
         instanceName,
@@ -335,10 +336,10 @@ async function handleIncomingMessage({ remoteJid, text, instanceName, profileNam
     return;
   }
 
-  if (lead.estado === 'falar_com_rafa') {
-    // Mesmo em modo Rafa, o utilizador pode voltar a DUVIDA ou GESTORA
+  if (lead.estado_conversa === 'com_rafa') {
+    // Resposta do lead é tratada abaixo (DUVIDA, GESTORA); "boa sorte!" é detetada em mensagens enviadas pela Rafa (fromMe) no webhook
     if (isCommand(text, CMD_DUVIDA)) {
-      await db.updateLeadState(lead.id, 'em_conversa');
+      await db.updateLeadState(lead.id, { conversa: 'com_joana' });
       await sendText(
         instanceName,
         remoteJid,
@@ -347,9 +348,9 @@ async function handleIncomingMessage({ remoteJid, text, instanceName, profileNam
       return;
     }
     if (isCommand(text, CMD_GESTORA)) {
-      const jaEnviouDocs = lead.estado === 'docs_enviados' || lead.estado_anterior === 'docs_enviados';
+      const jaEnviouDocs = lead.estado_docs === 'docs_enviados';
       if (!jaEnviouDocs) {
-        await db.updateLeadState(lead.id, 'aguardando_docs');
+        await db.updateLeadState(lead.id, { conversa: 'com_gestora', docs: 'aguardando_docs' });
       }
       const uploadLink = `${process.env.UPLOAD_BASE_URL || 'https://ia.rafaapelomundo.com'}/upload/${lead.id}`;
       await sendText(
@@ -359,8 +360,16 @@ async function handleIncomingMessage({ remoteJid, text, instanceName, profileNam
       );
       return;
     }
-    // Qualquer outra mensagem em falar_com_rafa fica a cargo da Rafa (sem resposta automática)
   }
+}
+
+// Quando a Rafa envia "boa sorte!" para o lead (mensagem fromMe), desativa modo com_rafa → aguardando_escolha
+async function handleOutgoingBoaSorte(remoteJid, text, instanceName) {
+  if (!remoteJid || !isBoaSorteMessage(text)) return;
+  const lead = await db.findLeadByWhatsapp(remoteJid);
+  if (!lead || lead.estado_conversa !== 'com_rafa') return;
+  await db.updateLeadState(lead.id, { conversa: 'aguardando_escolha' });
+  console.log(`[evo] Lead ${lead.id} (${remoteJid}): "boa sorte!" → estado_conversa = aguardando_escolha`);
 }
 
 // Webhook Evolution API – MESSAGES_UPSERT
@@ -374,6 +383,7 @@ app.post('/webhook/evolution', (req, res) => {
 
   const data = body.data || {};
   const key = data.key || {};
+  const fromMe = key.fromMe === true || key.fromMe === 'true';
 
   const remoteJid = key.remoteJid;
   const instanceName = body.instance || EVOLUTION_INSTANCE;
@@ -381,10 +391,18 @@ app.post('/webhook/evolution', (req, res) => {
 
   const messages = Array.isArray(data.messages) ? data.messages : (data.message ? [data] : []);
   for (const msg of messages) {
+    const msgKey = msg.key || key;
+    const isFromMe = msgKey.fromMe === true || msgKey.fromMe === 'true' || fromMe;
+    const jid = msgKey.remoteJid || remoteJid;
     const message = msg.message || msg;
     const text = getMessageText(message);
-    if (text) {
-      handleIncomingMessage({ remoteJid, text, instanceName, profileName }).catch((err) =>
+    if (!text) continue;
+    if (isFromMe) {
+      handleOutgoingBoaSorte(jid, text, instanceName).catch((err) =>
+        console.error('handleOutgoingBoaSorte:', err)
+      );
+    } else {
+      handleIncomingMessage({ remoteJid: jid, text, instanceName, profileName }).catch((err) =>
         console.error('handleIncomingMessage:', err)
       );
     }
@@ -394,9 +412,15 @@ app.post('/webhook/evolution', (req, res) => {
   if (!messages.length && data.message) {
     const text = getMessageText(data.message);
     if (text && remoteJid) {
-      handleIncomingMessage({ remoteJid, text, instanceName, profileName }).catch((err) =>
-        console.error('handleIncomingMessage:', err)
-      );
+      if (fromMe) {
+        handleOutgoingBoaSorte(remoteJid, text, instanceName).catch((err) =>
+          console.error('handleOutgoingBoaSorte:', err)
+        );
+      } else {
+        handleIncomingMessage({ remoteJid, text, instanceName, profileName }).catch((err) =>
+          console.error('handleIncomingMessage:', err)
+        );
+      }
     }
   }
 });

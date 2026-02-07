@@ -38,12 +38,12 @@ async function findLeadByWhatsapp(remoteJid) {
   return rows[0] || null;
 }
 
-async function createLead({ remoteJid, nome, origemInstancia, estado }) {
+async function createLead({ remoteJid, nome, origemInstancia }) {
   const number = normalizeNumber(remoteJid);
   await query(
-    `INSERT INTO ch_leads (whatsapp_number, nome, origem_instancia, estado, created_at, updated_at)
-     VALUES (?, ?, ?, ?, NOW(), NOW())`,
-    [number, nome || null, origemInstancia || null, estado]
+    `INSERT INTO ch_leads (whatsapp_number, nome, origem_instancia, estado_conversa, estado_docs, created_at, updated_at)
+     VALUES (?, ?, ?, 'aguardando_escolha', 'aguardando_docs', NOW(), NOW())`,
+    [number, nome || null, origemInstancia || null]
   );
   const rows = await query(
     'SELECT * FROM ch_leads WHERE whatsapp_number = ? ORDER BY created_at DESC LIMIT 1',
@@ -52,13 +52,21 @@ async function createLead({ remoteJid, nome, origemInstancia, estado }) {
   return rows[0] || null;
 }
 
-async function updateLeadState(id, estado, extra = {}) {
-  const fields = ['estado = ?', 'updated_at = NOW()'];
-  const values = [estado];
+/** Atualiza estado_conversa e/ou estado_docs. extra: { docs_enviados, docs_enviados_em } */
+async function updateLeadState(id, updates, extra = {}) {
+  const fields = ['updated_at = NOW()'];
+  const values = [];
 
-  if (extra.estado_anterior !== undefined) {
-    fields.push('estado_anterior = ?');
-    values.push(extra.estado_anterior);
+  if (typeof updates === 'string') {
+    updates = { conversa: updates };
+  }
+  if (updates.conversa !== undefined) {
+    fields.push('estado_conversa = ?');
+    values.push(updates.conversa);
+  }
+  if (updates.docs !== undefined) {
+    fields.push('estado_docs = ?');
+    values.push(updates.docs);
   }
   if (extra.docs_enviados !== undefined) {
     fields.push('docs_enviados = ?');
@@ -69,9 +77,11 @@ async function updateLeadState(id, estado, extra = {}) {
     values.push(extra.docs_enviados_em);
   }
 
+  if (values.length === 0 && Object.keys(extra).length === 0) return;
+  values.push(id);
   await query(
     `UPDATE ch_leads SET ${fields.join(', ')} WHERE id = ?`,
-    [...values, id]
+    values
   );
 }
 
