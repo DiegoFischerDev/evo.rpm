@@ -23,6 +23,7 @@ const PORT = process.env.PORT || 3000;
 const EVOLUTION_URL = (process.env.EVOLUTION_API_URL || '').replace(/\/$/, '');
 const EVOLUTION_API_KEY = process.env.EVOLUTION_API_KEY || '';
 const EVOLUTION_INSTANCE = process.env.EVOLUTION_INSTANCE || 'DiegoWoo';
+const ADMIN_WHATSAPP = '351927398547';
 const OPENAI_API_KEY = process.env.OPENAI_API_KEY || '';
 
 const openai = OPENAI_API_KEY ? new OpenAI({ apiKey: OPENAI_API_KEY }) : null;
@@ -131,7 +132,7 @@ async function sendText(instanceName, remoteJid, text) {
     return;
   }
   const instance = instanceName || EVOLUTION_INSTANCE;
-  const number = db.normalizeNumber(remoteJid);
+  const number = typeof remoteJid === 'string' && remoteJid.includes('@') ? db.normalizeNumber(remoteJid) : (remoteJid || '').replace(/\D/g, '');
   if (!number) return;
   await axios.post(
     `${EVOLUTION_URL}/message/sendText/${instance}`,
@@ -144,6 +145,19 @@ async function sendText(instanceName, remoteJid, text) {
       timeout: 15000,
     }
   );
+}
+
+// Notifica o administrador (Rafa) quando um lead pede "Falar com rafa": mensagem + link wa.me com texto pré-preenchido.
+async function notifyAdminFalarComRafa(instanceName, lead, remoteJid) {
+  if (!ADMIN_WHATSAPP) return;
+  const nome = (lead.nome || 'Lead').trim() || 'Lead';
+  const leadNumber = db.normalizeNumber(remoteJid);
+  if (!leadNumber) return;
+  const msgPrefixada = `oi ${nome}! aqui é Rafa, pode falar :)`;
+  const link = `https://wa.me/${leadNumber}?text=${encodeURIComponent(msgPrefixada)}`;
+  const text = `${nome} quer falar com rafa\n\n${link}`;
+  const adminJid = ADMIN_WHATSAPP + '@s.whatsapp.net';
+  await sendText(instanceName, adminJid, text);
 }
 
 // IA para dúvidas
@@ -254,6 +268,9 @@ async function handleIncomingMessage({ remoteJid, text, instanceName, profileNam
         remoteJid,
         'Claro! Vou avisar a Rafa para falar contigo pessoalmente 😊\nEla vai mandar mensagem por aqui no WhatsApp assim que puder.'
       );
+      notifyAdminFalarComRafa(instanceName, lead, remoteJid).catch((err) =>
+        console.error('notifyAdminFalarComRafa:', err.message)
+      );
       return;
     }
     // Se escreveu outra coisa, repetir instruções
@@ -286,17 +303,20 @@ async function handleIncomingMessage({ remoteJid, text, instanceName, profileNam
         remoteJid,
         'Certo, vou pedir para a Rafa falar contigo diretamente. Em breve ela entra em contacto por aqui no WhatsApp.'
       );
+      notifyAdminFalarComRafa(instanceName, lead, remoteJid).catch((err) =>
+        console.error('notifyAdminFalarComRafa:', err.message)
+      );
       return;
     }
 
     // Limite de 10 perguntas por lead para economizar tokens
     const leadKey = String(lead.id);
     aiQuestionCountByLead[leadKey] = (aiQuestionCountByLead[leadKey] || 0) + 1;
-    if (aiQuestionCountByLead[leadKey] > 4) {
+    if (aiQuestionCountByLead[leadKey] > 10) {
       await sendText(
         instanceName,
         remoteJid,
-        'Chegaste ao limite de 4 perguntas com a Joana 😊\n\nA partir daqui, escreve GESTORA para falar com a gestora e iniciar a análise do teu caso, ou FALAR COM RAFA se precisares falar diretamente com a Rafa.'
+        'Chegaste ao limite de 10 perguntas com a Joana 😊\n\nA partir daqui, escreve GESTORA para falar com a gestora e iniciar a análise do teu caso, ou FALAR COM RAFA se precisares falar diretamente com a Rafa.'
       );
       return;
     }
