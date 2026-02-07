@@ -153,7 +153,7 @@ async function notifyAdminFalarComRafa(instanceName, lead, remoteJid) {
   const nome = (lead.nome || 'Lead').trim() || 'Lead';
   const leadNumber = db.normalizeNumber(remoteJid);
   if (!leadNumber) return;
-  const msgPrefixada = `oi ${nome}! aqui é Rafa, pode falar :)`;
+  const msgPrefixada = `oi ${nome}! aqui é Rafa, pode falar 😊`;
   const link = `https://wa.me/${leadNumber}?text=${encodeURIComponent(msgPrefixada)}`;
   const text = `${nome} quer falar com rafa\n\n${link}`;
   const adminJid = ADMIN_WHATSAPP + '@s.whatsapp.net';
