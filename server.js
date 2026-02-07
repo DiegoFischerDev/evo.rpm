@@ -150,12 +150,13 @@ async function sendText(instanceName, remoteJid, text) {
 // Notifica o administrador (Rafa) quando um lead pede "Falar com rafa": mensagem + link wa.me com texto pré-preenchido.
 async function notifyAdminFalarComRafa(instanceName, lead, remoteJid) {
   if (!ADMIN_WHATSAPP) return;
-  const nome = (lead.nome || 'Lead').trim() || 'Lead';
+  const nomeCompleto = (lead.nome || 'Lead').trim() || 'Lead';
+  const primeiroNome = getFirstName(lead.nome) || nomeCompleto;
   const leadNumber = db.normalizeNumber(remoteJid);
   if (!leadNumber) return;
-  const msgPrefixada = `oi ${nome}! aqui é Rafa, pode falar 😊`;
+  const msgPrefixada = `oi ${primeiroNome}! aqui é Rafa, pode falar 😊`;
   const link = `https://wa.me/${leadNumber}?text=${encodeURIComponent(msgPrefixada)}`;
-  const text = `${nome} quer falar com rafa\n\n${link}`;
+  const text = `${nomeCompleto} quer falar com rafa\n\n${link}`;
   const adminJid = ADMIN_WHATSAPP + '@s.whatsapp.net';
   await sendText(instanceName, adminJid, text);
 }
