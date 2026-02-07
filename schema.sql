@@ -1,6 +1,18 @@
--- Tabela de leads para o backend evo (MySQL)
+-- Crédito Habitação (CH): tabelas para o backend evo (MySQL)
+-- Alinhado com ia-app/migrations/005_recreate_ch_tables.sql
 
-CREATE TABLE IF NOT EXISTS gestora_de_credito (
+CREATE TABLE IF NOT EXISTS ch_gestoras (
+  id INT UNSIGNED NOT NULL AUTO_INCREMENT PRIMARY KEY,
+  nome VARCHAR(255) NOT NULL,
+  email VARCHAR(255) NOT NULL,
+  whatsapp VARCHAR(32) NOT NULL,
+  ativo TINYINT(1) NOT NULL DEFAULT 1,
+  created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  updated_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+  KEY idx_ch_gestoras_ativo (ativo)
+);
+
+CREATE TABLE IF NOT EXISTS ch_leads (
   id INT UNSIGNED NOT NULL AUTO_INCREMENT PRIMARY KEY,
   whatsapp_number VARCHAR(32) NOT NULL,
   nome VARCHAR(255),
@@ -16,8 +28,9 @@ CREATE TABLE IF NOT EXISTS gestora_de_credito (
   email_verification_sent_at DATETIME NULL,
   pending_nome VARCHAR(255) NULL,
   pending_email VARCHAR(255) NULL,
+  gestora_id INT UNSIGNED NULL,
   created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
   updated_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
-  KEY idx_gestora_de_credito_whatsapp_number (whatsapp_number)
+  KEY idx_ch_leads_whatsapp_number (whatsapp_number),
+  KEY idx_ch_leads_gestora_id (gestora_id)
 );
-

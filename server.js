@@ -268,7 +268,9 @@ async function handleIncomingMessage({ remoteJid, text, instanceName, profileNam
   if (lead.estado === 'em_conversa' || lead.estado === 'docs_enviados' || lead.estado === 'aguardando_docs') {
     // Comandos de navegação dentro da conversa
     if (isCommand(text, CMD_GESTORA)) {
-      await db.updateLeadState(lead.id, 'aguardando_docs');
+      if (lead.estado !== 'docs_enviados') {
+        await db.updateLeadState(lead.id, 'aguardando_docs');
+      }
       const uploadLink = `${process.env.UPLOAD_BASE_URL || 'https://ia.rafaapelomundo.com'}/upload/${lead.id}`;
       await sendText(
         instanceName,
@@ -324,7 +326,10 @@ async function handleIncomingMessage({ remoteJid, text, instanceName, profileNam
       return;
     }
     if (isCommand(text, CMD_GESTORA)) {
-      await db.updateLeadState(lead.id, 'aguardando_docs');
+      const jaEnviouDocs = lead.estado === 'docs_enviados' || lead.estado_anterior === 'docs_enviados';
+      if (!jaEnviouDocs) {
+        await db.updateLeadState(lead.id, 'aguardando_docs');
+      }
       const uploadLink = `${process.env.UPLOAD_BASE_URL || 'https://ia.rafaapelomundo.com'}/upload/${lead.id}`;
       await sendText(
         instanceName,

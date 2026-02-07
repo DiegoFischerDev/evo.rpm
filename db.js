@@ -32,7 +32,7 @@ async function findLeadByWhatsapp(remoteJid) {
   const number = normalizeNumber(remoteJid);
   if (!number) return null;
   const rows = await query(
-    'SELECT * FROM gestora_de_credito WHERE whatsapp_number = ? ORDER BY created_at DESC LIMIT 1',
+    'SELECT * FROM ch_leads WHERE whatsapp_number = ? ORDER BY created_at DESC LIMIT 1',
     [number]
   );
   return rows[0] || null;
@@ -41,12 +41,12 @@ async function findLeadByWhatsapp(remoteJid) {
 async function createLead({ remoteJid, nome, origemInstancia, estado }) {
   const number = normalizeNumber(remoteJid);
   await query(
-    `INSERT INTO gestora_de_credito (whatsapp_number, nome, origem_instancia, estado, created_at, updated_at)
+    `INSERT INTO ch_leads (whatsapp_number, nome, origem_instancia, estado, created_at, updated_at)
      VALUES (?, ?, ?, ?, NOW(), NOW())`,
     [number, nome || null, origemInstancia || null, estado]
   );
   const rows = await query(
-    'SELECT * FROM gestora_de_credito WHERE whatsapp_number = ? ORDER BY created_at DESC LIMIT 1',
+    'SELECT * FROM ch_leads WHERE whatsapp_number = ? ORDER BY created_at DESC LIMIT 1',
     [number]
   );
   return rows[0] || null;
@@ -70,7 +70,7 @@ async function updateLeadState(id, estado, extra = {}) {
   }
 
   await query(
-    `UPDATE gestora_de_credito SET ${fields.join(', ')} WHERE id = ?`,
+    `UPDATE ch_leads SET ${fields.join(', ')} WHERE id = ?`,
     [...values, id]
   );
 }
