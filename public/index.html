@@ -1,10 +1,20 @@
 <!DOCTYPE html>
-<html lang="pt-BR">
+<html lang="pt-PT">
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <title>Evo – evo.rafaapelomundo.com</title>
+    <title>Evo – Estado da API</title>
     <style>
+      :root {
+        --bg: #f5f5f5;
+        --surface: #ffffff;
+        --text: #000000;
+        --text-muted: #555555;
+        --ok: #059669;
+        --error: #dc2626;
+        --border: #e0e0e0;
+      }
+      * { box-sizing: border-box; }
       body {
         font-family: system-ui, sans-serif;
         margin: 0;
@@ -12,23 +22,76 @@
         display: flex;
         align-items: center;
         justify-content: center;
-        background: #0f172a;
-        color: #e5e7eb;
+        background: var(--bg);
+        color: var(--text);
+        padding: 1.5rem;
       }
       .card {
-        background: #1e293b;
+        background: var(--surface);
         border-radius: 12px;
         padding: 2rem;
-        max-width: 420px;
+        max-width: 480px;
+        width: 100%;
+        border: 1px solid var(--border);
+        box-shadow: 0 1px 3px rgba(0,0,0,.08);
       }
-      h1 { margin: 0 0 0.5rem 0; font-size: 1.5rem; }
-      p { margin: 0; color: #94a3b8; font-size: 0.95rem; }
+      h1 { margin: 0 0 1rem 0; font-size: 1.5rem; }
+      .status-row {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        padding: 0.75rem 0;
+        border-bottom: 1px solid var(--border);
+        gap: 1rem;
+      }
+      .status-row:last-of-type { border-bottom: none; }
+      .status-label { font-weight: 500; color: var(--text); }
+      .status-value { font-size: 0.9rem; color: var(--text-muted); }
+      .status-ok { color: var(--ok); font-weight: 600; }
+      .status-error { color: var(--error); font-weight: 600; }
+      .loading { color: var(--text-muted); }
+      .time { font-size: 0.8rem; color: var(--text-muted); margin-top: 1.25rem; }
+      .webhook { font-size: 0.85rem; color: var(--text-muted); margin-top: 1rem; }
+      .webhook code { background: var(--bg); padding: 0.2rem 0.4rem; border-radius: 4px; }
     </style>
   </head>
   <body>
     <div class="card">
-      <h1>Evo</h1>
-      <p>Evolution API + OpenAI. Webhook: <code>POST /webhook/evolution</code></p>
+      <h1>Evo – Estado da API</h1>
+      <div id="content">
+        <p class="loading">A verificar…</p>
+      </div>
+      <p class="time" id="time"></p>
+      <p class="webhook">Webhook Evolution: <code>POST /webhook/evolution</code></p>
     </div>
+    <script>
+      (function () {
+        var content = document.getElementById('content');
+        var timeEl = document.getElementById('time');
+        fetch('/api/debug')
+          .then(function (r) { return r.json(); })
+          .then(function (d) {
+            timeEl.textContent = 'Atualizado: ' + (d.time || '').replace('T', ' ').slice(0, 19);
+            var html = '';
+            html += '<div class="status-row"><span class="status-label">Aplicação</span><span class="status-value status-ok">OK</span></div>';
+            html += '<div class="status-row"><span class="status-label">OpenAI</span><span class="status-value ' + (d.env && d.env.hasOpenAiKey ? 'status-ok">Configurado' : 'status-error">Não configurado') + '</span></div>';
+            html += '<div class="status-row"><span class="status-label">Evolution API (URL + chave)</span><span class="status-value ' + (d.env && d.env.hasEvolutionUrl && d.env.hasEvolutionKey ? 'status-ok">Configurado' : 'status-error">Falta configurar') + '</span></div>';
+            if (d.env && d.env.hasEvolutionUrl && d.env.hasEvolutionKey) {
+              if (d.evolution && d.evolution.ok) {
+                var st = d.evolution.state;
+                var stateStr = (st && st.state) || (typeof st === 'string' ? st : (st && st.instance && st.instance.state) ? st.instance.state : 'conectado');
+                html += '<div class="status-row"><span class="status-label">Conexão Evolution (instância ' + (d.env.evolutionInstance || '') + ')</span><span class="status-value status-ok">' + stateStr + '</span></div>';
+              } else {
+                html += '<div class="status-row"><span class="status-label">Conexão Evolution</span><span class="status-value status-error">' + (d.evolution && d.evolution.error ? d.evolution.error : 'Erro') + '</span></div>';
+              }
+            }
+            content.innerHTML = html;
+          })
+          .catch(function (err) {
+            content.innerHTML = '<div class="status-row"><span class="status-label">Estado</span><span class="status-value status-error">Erro ao obter estado: ' + (err.message || 'sem resposta') + '</span></div>';
+            timeEl.textContent = '';
+          });
+      })();
+    </script>
   </body>
-  </html>
+</html>
