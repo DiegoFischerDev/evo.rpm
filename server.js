@@ -151,6 +151,83 @@ function isBoaSorteMessage(text) {
   return t === 'boa sorte!' || t === 'boa sorte';
 }
 
+// Saudações/perguntas genéricas: resposta pronta, não envia para gestoras
+const GREETING_RESPONSE = 'Oi! Tudo bem, obrigada! 😊 Em que posso ajudar? Se tiveres dúvidas sobre crédito habitação, escreve aqui que eu envio para as gestoras.';
+const GREETING_PATTERNS = [
+  /^oi\s*!?\s*(\?)?\s*$/i,
+  /^olá?\s*!?\s*(\?)?\s*$/i,
+  /^tudo\s+bem\s*!?\s*(\?)?\s*$/i,
+  /^tudo\s+bom\s*!?\s*(\?)?\s*$/i,
+  /^como\s+vai\s*!?\s*(\?)?\s*$/i,
+  /^como\s+está\s*!?\s*(\?)?\s*$/i,
+  /^como\s+estas\s*!?\s*(\?)?\s*$/i,
+  /^como\s+estás\s*!?\s*(\?)?\s*$/i,
+  /^e\s+(aí|ai|você|voce)\s*!?\s*(\?)?\s*$/i,
+  /^bom\s+dia\s*!?\s*\.?\s*$/i,
+  /^boa\s+tarde\s*!?\s*\.?\s*$/i,
+  /^boa\s+noite\s*!?\s*\.?\s*$/i,
+  /^hey\s*!?\s*(\?)?\s*$/i,
+  /^ei\s*!?\s*(\?)?\s*$/i,
+  /^eai\s*!?\s*(\?)?\s*$/i,
+  /^ola\s*!?\s*(\?)?\s*$/i,
+  /^oi\s+tudo\s+bem\s*!?\s*(\?)?\s*$/i,
+  /^olá?\s+tudo\s+bem\s*!?\s*(\?)?\s*$/i,
+  /^oi\s+tudo\s+bom\s*!?\s*(\?)?\s*$/i,
+  /^olá?\s+tudo\s+bom\s*!?\s*(\?)?\s*$/i,
+];
+
+function isGreeting(text) {
+  const t = (text || '').trim().toLowerCase().replace(/\s+/g, ' ').replace(/[?!.]+\s*$/g, '').trim();
+  if (!t) return false;
+  return GREETING_PATTERNS.some((re) => re.test(t));
+}
+
+// Buffer de mensagens no modo dúvida até o lead enviar "?" (pergunta completa)
+const duvidaBufferByLead = new Map();
+
+function getDuvidaBufferKey(instanceName, leadId) {
+  return `${instanceName || ''}:${leadId}`;
+}
+
+function pushDuvidaBuffer(instanceName, leadId, text) {
+  const key = getDuvidaBufferKey(instanceName, leadId);
+  const arr = duvidaBufferByLead.get(key) || [];
+  arr.push((text || '').trim());
+  duvidaBufferByLead.set(key, arr);
+  return arr;
+}
+
+function consumeDuvidaBuffer(instanceName, leadId, lastMessage) {
+  const key = getDuvidaBufferKey(instanceName, leadId);
+  clearDuvidaBufferTimer(key);
+  const arr = duvidaBufferByLead.get(key) || [];
+  duvidaBufferByLead.delete(key);
+  const parts = [...arr, (lastMessage || '').trim()].filter(Boolean);
+  return parts.join(' ').trim();
+}
+
+const DUVIDA_BUFFER_REMINDER_MS = 2 * 60 * 1000;
+const DUVIDA_BUFFER_REMINDER_TEXT = 'Peço que ao final da sua pergunta adicione um "?" para eu entender que concluíste ok? 😊';
+const duvidaBufferTimerByKey = new Map();
+
+function clearDuvidaBufferTimer(key) {
+  const entry = duvidaBufferTimerByKey.get(key);
+  if (entry && entry.timeoutId) clearTimeout(entry.timeoutId);
+  duvidaBufferTimerByKey.delete(key);
+}
+
+function scheduleDuvidaBufferReminder(instanceName, leadId, remoteJid) {
+  const key = getDuvidaBufferKey(instanceName, leadId);
+  clearDuvidaBufferTimer(key);
+  const timeoutId = setTimeout(() => {
+    duvidaBufferTimerByKey.delete(key);
+    sendText(instanceName, remoteJid, DUVIDA_BUFFER_REMINDER_TEXT).catch((err) =>
+      console.error('duvidaBufferReminder send:', err.message)
+    );
+  }, DUVIDA_BUFFER_REMINDER_MS);
+  duvidaBufferTimerByKey.set(key, { timeoutId, remoteJid, instanceName });
+}
+
 async function sendText(instanceName, remoteJid, text) {
   if (!EVOLUTION_URL || !EVOLUTION_API_KEY) {
     console.warn('EVOLUTION_API_URL ou EVOLUTION_API_KEY não configuradas – resposta não enviada');
@@ -238,7 +315,7 @@ async function answerWithFAQ(lead, text, instanceName) {
       await sendText(
         instanceName,
         lead.whatsapp_number,
-        'Ainda não temos respostas guardadas para dúvidas. Uma gestora responderá em breve. Enquanto isso, escreve GESTORA para falar com a gestora ou FALAR COM RAFA para falar com a Rafa.'
+        'Ainda não temos respostas para essa pergunta. Enviamos sua dúvida para as gestoras e assim que tivermos um retorno delas eu vou te avisando por aqui ok? Fique à vontade para fazer outras perguntas 😊'
       );
       return;
     }
@@ -278,6 +355,16 @@ async function answerWithFAQ(lead, text, instanceName) {
       }
     }
 
+    const bestPergunta = bestId != null ? perguntas.find((p) => p.id === bestId) : null;
+    const bestIsSpam = bestPergunta && (bestPergunta.eh_spam === 1 || bestPergunta.eh_spam === true);
+    if (bestId != null && bestScore >= FAQ_MATCH_THRESHOLD && bestIsSpam) {
+      await sendText(
+        instanceName,
+        lead.whatsapp_number,
+        'Obrigada pela mensagem. Se tiveres uma dúvida concreta sobre crédito habitação, escreve-a e termina com ? para eu analisar. 😊'
+      );
+      return;
+    }
     if (bestId != null && bestScore >= FAQ_MATCH_THRESHOLD) {
       const faqRes = await axios.get(`${IA_APP_BASE_URL}/api/faq/perguntas/${bestId}`, { timeout: 10000 });
       const { pergunta, respostas } = faqRes.data || {};
@@ -464,18 +551,33 @@ async function handleIncomingMessage({ remoteJid, text, instanceName, profileNam
       return;
     }
 
+    let textToAnalyze = text;
+    if (lead.estado_conversa === 'com_joana') {
+      if (!text.includes('?')) {
+        pushDuvidaBuffer(instanceName, lead.id, text);
+        scheduleDuvidaBufferReminder(instanceName, lead.id, remoteJid);
+        return;
+      }
+      textToAnalyze = consumeDuvidaBuffer(instanceName, lead.id, text) || text.trim();
+      if (!textToAnalyze) return;
+      if (isGreeting(textToAnalyze)) {
+        await sendText(instanceName, remoteJid, GREETING_RESPONSE);
+        return;
+      }
+    }
+
     const leadKey = String(lead.id);
     aiQuestionCountByLead[leadKey] = (aiQuestionCountByLead[leadKey] || 0) + 1;
-    if (aiQuestionCountByLead[leadKey] > 10) {
+    if (aiQuestionCountByLead[leadKey] > 20) {
       await sendText(
         instanceName,
         remoteJid,
-        'Chegaste ao limite de 10 perguntas com a Joana 😊\n\nA partir daqui, escreve GESTORA para falar com a gestora e iniciar a análise do teu caso, ou FALAR COM RAFA se precisares falar diretamente com a Rafa.'
+        'Chegaste ao limite de 20 perguntas com a Joana 😊\n\nA partir daqui, escreve GESTORA para falar com a gestora e iniciar a análise do teu caso, ou FALAR COM RAFA se precisares falar diretamente com a Rafa.'
       );
       return;
     }
 
-    await answerWithFAQ(lead, text, instanceName);
+    await answerWithFAQ(lead, textToAnalyze, instanceName);
     if (lead.estado_conversa === 'com_gestora' && lead.estado_docs === 'aguardando_docs') {
       const uploadLink = `${process.env.UPLOAD_BASE_URL || 'https://ia.rafaapelomundo.com'}/upload/${lead.id}`;
       await sendText(
