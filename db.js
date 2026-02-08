@@ -86,13 +86,13 @@ async function updateLeadState(id, updates, extra = {}) {
 }
 
 // ---------- Dúvidas unificadas (ch_duvidas com coluna embedding) ----------
-/** eh_pendente: 0 = FAQ (perguntas com respostas), 1 = pendentes. Sempre filtra eh_spam=0. */
+/** eh_pendente: 0 = FAQ (perguntas com respostas), 1 = pendentes. */
 async function getDuvidasWithEmbeddings(ehPendente) {
   const ep = ehPendente ? 1 : 0;
   const rows = await query(
     `SELECT id, texto, embedding
      FROM ch_duvidas
-     WHERE eh_pendente = ? AND eh_spam = 0 AND texto IS NOT NULL AND TRIM(texto) != ''
+     WHERE eh_pendente = ? AND texto IS NOT NULL AND TRIM(texto) != ''
      ORDER BY id ASC`,
     [ep]
   );
