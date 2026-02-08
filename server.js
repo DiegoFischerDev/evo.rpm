@@ -414,7 +414,7 @@ async function answerWithFAQ(lead, text, instanceName) {
       await sendText(
         instanceName,
         lead.whatsapp_number,
-        'Não encontrei uma resposta pronta para esta dúvida. Uma gestora vai analisar e responder em breve por aqui. Se quiseres, podes reformular a pergunta.'
+        'Ainda não temos respostas para essa pergunta. Enviamos sua dúvida para as gestoras e assim que tivermos um retorno delas eu vou te avisando por aqui ok? Fique à vontade para fazer outras perguntas 😊'
       );
     } else {
       await sendText(
