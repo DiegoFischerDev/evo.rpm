@@ -369,16 +369,6 @@ async function answerWithFAQ(lead, text, instanceName) {
       }
     }
 
-    const bestPergunta = bestId != null ? perguntas.find((p) => p.id === bestId) : null;
-    const bestIsSpam = bestPergunta && (bestPergunta.eh_spam === 1 || bestPergunta.eh_spam === true);
-    if (bestId != null && bestScore >= FAQ_MATCH_THRESHOLD && bestIsSpam) {
-      await sendText(
-        instanceName,
-        lead.whatsapp_number,
-        'Obrigada pela mensagem. Se tiveres uma dúvida concreta sobre crédito habitação, escreve-a e termina com ? para eu analisar. 😊'
-      );
-      return;
-    }
     if (bestId != null && bestScore >= FAQ_MATCH_THRESHOLD) {
       const faqRes = await axios.get(`${IA_APP_BASE_URL}/api/faq/perguntas/${bestId}`, { timeout: 10000 });
       const { pergunta, respostas } = faqRes.data || {};

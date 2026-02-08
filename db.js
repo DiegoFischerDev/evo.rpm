@@ -88,7 +88,7 @@ async function updateLeadState(id, updates, extra = {}) {
 // ---------- FAQ: perguntas + embeddings (mesma BD que ia-app) ----------
 async function getPerguntasWithEmbeddings() {
   const rows = await query(
-    `SELECT p.id, p.texto, COALESCE(p.eh_spam, 0) AS eh_spam, e.embedding
+    `SELECT p.id, p.texto, e.embedding
      FROM ch_perguntas p
      LEFT JOIN ch_pergunta_embeddings e ON e.pergunta_id = p.id
      ORDER BY p.id ASC`
