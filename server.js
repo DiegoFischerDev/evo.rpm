@@ -291,6 +291,7 @@ async function notifyAdminFalarComRafa(instanceName, lead, remoteJid) {
 
 const EMBEDDING_MODEL = process.env.OPENAI_EMBEDDING_MODEL || 'text-embedding-3-small';
 const FAQ_MATCH_THRESHOLD = Number(process.env.FAQ_MATCH_THRESHOLD) || 0.78;
+const DUVIDA_DUPLICATE_THRESHOLD = Number(process.env.DUVIDA_DUPLICATE_THRESHOLD) || 0.86;
 
 function norm(v) {
   let s = 0;
@@ -402,12 +403,38 @@ async function answerWithFAQ(lead, text, instanceName) {
         await axios.post(`${IA_APP_BASE_URL}/api/faq/perguntas/${bestId}/incrementar-frequencia`, {}, { timeout: 5000 }).catch(() => {});
         let msg = '📌 *Pergunta:*\n' + (pergunta.texto || '').trim() + '\n\n';
         respostas.forEach((r) => {
-          msg += '💬 *' + (r.gestora_nome || 'Gestora') + ':*\n' + (r.texto || '').trim() + '\n\n';
+          msg += '💬 *' + (r.gestora_nome || 'Gestora') + ' (Gestora de crédito):*\n' + (r.texto || '').trim() + '\n\n';
         });
         msg += '— Isto respondeu à tua dúvida? Se quiseres, podes reformular a pergunta.';
         await sendText(instanceName, lead.whatsapp_number, msg);
         return;
       }
+    }
+
+    // Verificar se já existe uma dúvida pendente muito parecida (evitar duplicados)
+    try {
+      const duvidasRes = await axios.get(`${IA_APP_BASE_URL}/api/faq/duvidas-pendentes-textos`, { timeout: 8000 });
+      const duvidasTextos = Array.isArray(duvidasRes.data) ? duvidasRes.data : [];
+      if (duvidasTextos.length > 0) {
+        let bestDuvidaScore = -1;
+        for (const d of duvidasTextos) {
+          if (!d.texto || !d.texto.trim()) continue;
+          const emb = await getEmbedding(d.texto);
+          if (!emb || !Array.isArray(emb)) continue;
+          const score = cosineSimilarity(queryEmbedding, emb);
+          if (score > bestDuvidaScore) bestDuvidaScore = score;
+        }
+        if (bestDuvidaScore >= DUVIDA_DUPLICATE_THRESHOLD) {
+          await sendText(
+            instanceName,
+            lead.whatsapp_number,
+            'Já temos uma dúvida muito parecida em análise. Assim que tivermos resposta das gestoras, avisamos por aqui. Fique à vontade para fazer outras perguntas 😊'
+          );
+          return;
+        }
+      }
+    } catch (err) {
+      console.error('duvidas-pendentes-textos:', err.response?.data || err.message);
     }
 
     let createdDuvida = false;
