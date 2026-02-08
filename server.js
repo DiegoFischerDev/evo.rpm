@@ -225,6 +225,16 @@ async function answerWithFAQ(lead, text, instanceName) {
   try {
     let perguntas = await db.getPerguntasWithEmbeddings();
     if (!perguntas || !perguntas.length) {
+      await axios.post(
+        `${IA_APP_BASE_URL}/api/faq/duvidas-pendentes`,
+        {
+          contacto_whatsapp: number,
+          lead_id: lead.id,
+          texto: text.trim(),
+          origem: 'evo',
+        },
+        { headers: { 'Content-Type': 'application/json' }, timeout: 10000 }
+      ).catch((err) => console.error('createDuvidaPendente (sem FAQ):', err.response?.data || err.message));
       await sendText(
         instanceName,
         lead.whatsapp_number,
