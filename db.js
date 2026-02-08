@@ -85,24 +85,24 @@ async function updateLeadState(id, updates, extra = {}) {
   );
 }
 
-// ---------- FAQ: perguntas + embeddings (mesma BD que ia-app) ----------
-async function getPerguntasWithEmbeddings() {
+// ---------- Dúvidas unificadas (ch_duvidas com coluna embedding) ----------
+/** eh_pendente: 0 = FAQ (perguntas com respostas), 1 = pendentes. Sempre filtra eh_spam=0. */
+async function getDuvidasWithEmbeddings(ehPendente) {
+  const ep = ehPendente ? 1 : 0;
   const rows = await query(
-    `SELECT p.id, p.texto, e.embedding
-     FROM ch_perguntas p
-     LEFT JOIN ch_pergunta_embeddings e ON e.pergunta_id = p.id
-     ORDER BY p.id ASC`
+    `SELECT id, texto, embedding
+     FROM ch_duvidas
+     WHERE eh_pendente = ? AND eh_spam = 0 AND texto IS NOT NULL AND TRIM(texto) != ''
+     ORDER BY id ASC`,
+    [ep]
   );
   return rows;
 }
 
-async function savePerguntaEmbedding(perguntaId, embedding) {
+/** Atualiza a coluna embedding de ch_duvidas (JSON). */
+async function saveDuvidaEmbedding(duvidaId, embedding) {
   const payload = JSON.stringify(Array.isArray(embedding) ? embedding : []);
-  await query(
-    `INSERT INTO ch_pergunta_embeddings (pergunta_id, embedding) VALUES (?, ?)
-     ON DUPLICATE KEY UPDATE embedding = VALUES(embedding), updated_at = NOW()`,
-    [perguntaId, payload]
-  );
+  await query('UPDATE ch_duvidas SET embedding = ? WHERE id = ?', [payload, duvidaId]);
 }
 
 module.exports = {
@@ -112,7 +112,7 @@ module.exports = {
   createLead,
   updateLeadState,
   normalizeNumber,
-  getPerguntasWithEmbeddings,
-  savePerguntaEmbedding,
+  getDuvidasWithEmbeddings,
+  saveDuvidaEmbedding,
 };
 

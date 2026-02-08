@@ -60,15 +60,15 @@ app.post('/api/internal/send-text', (req, res) => {
     });
 });
 
-// Atualizar embedding de uma pergunta (chamado pelo ia-app quando o admin edita o texto da pergunta)
-app.post('/api/internal/atualizar-embedding-pergunta', async (req, res) => {
+// Atualizar embedding de uma dúvida (ch_duvidas; chamado pelo ia-app ao editar pergunta ou dúvida pendente)
+app.post('/api/internal/atualizar-embedding-duvida', async (req, res) => {
   if (EVO_INTERNAL_SECRET && req.get('X-Internal-Secret') !== EVO_INTERNAL_SECRET) {
     return res.status(403).json({ message: 'Forbidden' });
   }
-  const perguntaId = req.body && req.body.pergunta_id != null ? Number(req.body.pergunta_id) : null;
+  const duvidaId = req.body && req.body.duvida_id != null ? Number(req.body.duvida_id) : null;
   const texto = req.body && req.body.texto != null ? String(req.body.texto).trim() : '';
-  if (!perguntaId || !Number.isInteger(perguntaId) || perguntaId < 1) {
-    return res.status(400).json({ message: 'pergunta_id (número) é obrigatório.' });
+  if (!duvidaId || !Number.isInteger(duvidaId) || duvidaId < 1) {
+    return res.status(400).json({ message: 'duvida_id (número) é obrigatório.' });
   }
   if (!texto) {
     return res.status(400).json({ message: 'texto é obrigatório.' });
@@ -78,10 +78,10 @@ app.post('/api/internal/atualizar-embedding-pergunta', async (req, res) => {
     if (!emb) {
       return res.status(500).json({ message: 'Não foi possível gerar o embedding.' });
     }
-    await db.savePerguntaEmbedding(perguntaId, emb);
+    await db.saveDuvidaEmbedding(duvidaId, emb);
     res.json({ ok: true });
   } catch (err) {
-    console.error('atualizar-embedding-pergunta:', err.message);
+    console.error('atualizar-embedding-duvida:', err.message);
     res.status(500).json({ message: err.message || 'Erro ao atualizar embedding.' });
   }
 });
@@ -327,7 +327,7 @@ async function answerWithFAQ(lead, text, instanceName) {
   if (!number) return;
 
   try {
-    let perguntas = await db.getPerguntasWithEmbeddings();
+    let perguntas = await db.getDuvidasWithEmbeddings(0);
     if (!perguntas || !perguntas.length) {
       let created = false;
       try {
@@ -377,7 +377,7 @@ async function answerWithFAQ(lead, text, instanceName) {
       if (!hasEmb && p.texto) {
         const emb = await getEmbedding(p.texto);
         if (emb) {
-          await db.savePerguntaEmbedding(p.id, emb);
+          await db.saveDuvidaEmbedding(p.id, emb);
           p.embedding = emb;
         }
       }
@@ -411,17 +411,31 @@ async function answerWithFAQ(lead, text, instanceName) {
       }
     }
 
-    // Verificar se já existe uma dúvida pendente muito parecida (evitar duplicados)
+    // Verificar se já existe uma dúvida pendente muito parecida (usar embeddings guardados)
     try {
-      const duvidasRes = await axios.get(`${IA_APP_BASE_URL}/api/faq/duvidas-pendentes-textos`, { timeout: 8000 });
-      const duvidasTextos = Array.isArray(duvidasRes.data) ? duvidasRes.data : [];
-      if (duvidasTextos.length > 0) {
+      const duvidas = await db.getDuvidasWithEmbeddings(1);
+      if (duvidas && duvidas.length > 0) {
         let bestDuvidaScore = -1;
-        for (const d of duvidasTextos) {
-          if (!d.texto || !d.texto.trim()) continue;
-          const emb = await getEmbedding(d.texto);
-          if (!emb || !Array.isArray(emb)) continue;
-          const score = cosineSimilarity(queryEmbedding, emb);
+        for (const d of duvidas) {
+          let arr = d.embedding;
+          if (arr == null || (Array.isArray(arr) && arr.length === 0) || (typeof arr === 'string' && arr.length < 3)) {
+            if (d.texto && d.texto.trim()) {
+              const emb = await getEmbedding(d.texto);
+              if (emb) {
+                await db.saveDuvidaEmbedding(d.id, emb);
+                arr = emb;
+              }
+            }
+          }
+          if (typeof arr === 'string') {
+            try {
+              arr = JSON.parse(arr);
+            } catch (_) {
+              arr = [];
+            }
+          }
+          if (!Array.isArray(arr) || arr.length === 0) continue;
+          const score = cosineSimilarity(queryEmbedding, arr);
           if (score > bestDuvidaScore) bestDuvidaScore = score;
         }
         if (bestDuvidaScore >= DUVIDA_DUPLICATE_THRESHOLD) {
@@ -434,7 +448,7 @@ async function answerWithFAQ(lead, text, instanceName) {
         }
       }
     } catch (err) {
-      console.error('duvidas-pendentes-textos:', err.response?.data || err.message);
+      console.error('getDuvidasWithEmbeddings(1):', err.message);
     }
 
     let createdDuvida = false;
@@ -450,6 +464,14 @@ async function answerWithFAQ(lead, text, instanceName) {
         { headers: { 'Content-Type': 'application/json' }, timeout: 10000 }
       );
       createdDuvida = res && res.status >= 200 && res.status < 300;
+      if (createdDuvida && res.data && res.data.id && res.data.texto) {
+        try {
+          const emb = await getEmbedding(String(res.data.texto).trim());
+          if (emb) await db.saveDuvidaEmbedding(Number(res.data.id), emb);
+        } catch (embErr) {
+          console.error('saveDuvidaEmbedding após criar:', embErr.message);
+        }
+      }
     } catch (err) {
       console.error('createDuvidaPendente:', err.response?.data || err.message);
     }
