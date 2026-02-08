@@ -25,6 +25,7 @@ const EVOLUTION_API_KEY = process.env.EVOLUTION_API_KEY || '';
 const EVOLUTION_INSTANCE = process.env.EVOLUTION_INSTANCE || 'DiegoWoo';
 const ADMIN_WHATSAPP = '351927398547';
 const OPENAI_API_KEY = process.env.OPENAI_API_KEY || '';
+const IA_APP_BASE_URL = (process.env.IA_APP_URL || process.env.UPLOAD_BASE_URL || 'http://localhost:3000').replace(/\/$/, '');
 
 const openai = OPENAI_API_KEY ? new OpenAI({ apiKey: OPENAI_API_KEY }) : null;
 
@@ -36,9 +37,27 @@ const aiQuestionCountByLead = {};
 
 app.use(express.json({ limit: '1mb' }));
 
+const EVO_INTERNAL_SECRET = process.env.EVO_INTERNAL_SECRET || process.env.IA_APP_EVO_SECRET || '';
+
 // Health check
 app.get('/api/health', (req, res) => {
   res.json({ ok: true, app: 'evo', time: new Date().toISOString() });
+});
+
+// Envio de texto para um número (chamado pelo ia-app quando gestora responde a dúvida pendente)
+app.post('/api/internal/send-text', (req, res) => {
+  if (EVO_INTERNAL_SECRET && req.get('X-Internal-Secret') !== EVO_INTERNAL_SECRET) {
+    return res.status(403).json({ message: 'Forbidden' });
+  }
+  const number = (req.body && req.body.number && String(req.body.number).replace(/\D/g, '')) || '';
+  const text = (req.body && req.body.text && String(req.body.text)) || '';
+  if (!number || !text) return res.status(400).json({ message: 'number e text são obrigatórios.' });
+  sendText(null, number, text)
+    .then(() => res.json({ ok: true }))
+    .catch((err) => {
+      console.error('send-text:', err.message);
+      res.status(500).json({ message: err.response?.data?.message || err.message });
+    });
 });
 
 // Diagnóstico: verifica env e conectividade à Evolution API (sem expor chaves)
@@ -167,7 +186,130 @@ async function notifyAdminFalarComRafa(instanceName, lead, remoteJid) {
   await sendText(instanceName, adminJid, text);
 }
 
-// IA para dúvidas
+const EMBEDDING_MODEL = process.env.OPENAI_EMBEDDING_MODEL || 'text-embedding-3-small';
+const FAQ_MATCH_THRESHOLD = Number(process.env.FAQ_MATCH_THRESHOLD) || 0.78;
+
+function norm(v) {
+  let s = 0;
+  for (let i = 0; i < v.length; i++) s += v[i] * v[i];
+  return Math.sqrt(s) || 1;
+}
+
+function dot(a, b) {
+  let s = 0;
+  const n = Math.min(a.length, b.length);
+  for (let i = 0; i < n; i++) s += a[i] * b[i];
+  return s;
+}
+
+function cosineSimilarity(a, b) {
+  return dot(a, b) / (norm(a) * norm(b));
+}
+
+async function getEmbedding(text) {
+  if (!openai || !text || !text.trim()) return null;
+  const res = await openai.embeddings.create({
+    model: EMBEDDING_MODEL,
+    input: text.trim().slice(0, 8000),
+  });
+  const arr = res.data && res.data[0] && res.data[0].embedding;
+  return Array.isArray(arr) ? arr : null;
+}
+
+// FAQ: busca por vetores e responde com respostas das gestoras
+async function answerWithFAQ(lead, text, instanceName) {
+  if (!text.trim()) return;
+  const number = db.normalizeNumber(lead.whatsapp_number || '');
+  if (!number) return;
+
+  try {
+    let perguntas = await db.getPerguntasWithEmbeddings();
+    if (!perguntas || !perguntas.length) {
+      await sendText(
+        instanceName,
+        lead.whatsapp_number,
+        'Ainda não temos respostas guardadas para dúvidas. Uma gestora responderá em breve. Enquanto isso, escreve GESTORA para falar com a gestora ou FALAR COM RAFA para falar com a Rafa.'
+      );
+      return;
+    }
+
+    if (!openai || !OPENAI_API_KEY) {
+      await sendText(instanceName, lead.whatsapp_number, 'O serviço de dúvidas está temporariamente indisponível. Escreve GESTORA para falar com a gestora.');
+      return;
+    }
+
+    const queryEmbedding = await getEmbedding(text);
+    if (!queryEmbedding) {
+      await sendText(instanceName, lead.whatsapp_number, 'Não consegui processar a tua pergunta. Tenta reformular ou escreve GESTORA para falar com a gestora.');
+      return;
+    }
+
+    for (const p of perguntas) {
+      const hasEmb = p.embedding != null && (Array.isArray(p.embedding) ? p.embedding.length > 0 : (typeof p.embedding === 'string' ? p.embedding.length > 2 : false));
+      if (!hasEmb && p.texto) {
+        const emb = await getEmbedding(p.texto);
+        if (emb) {
+          await db.savePerguntaEmbedding(p.id, emb);
+          p.embedding = emb;
+        }
+      }
+    }
+
+    let bestId = null;
+    let bestScore = -1;
+    for (const p of perguntas) {
+      const emb = p.embedding;
+      const arr = typeof emb === 'string' ? (() => { try { return JSON.parse(emb); } catch (_) { return []; } })() : (Array.isArray(emb) ? emb : []);
+      if (arr.length === 0) continue;
+      const score = cosineSimilarity(queryEmbedding, arr);
+      if (score > bestScore) {
+        bestScore = score;
+        bestId = p.id;
+      }
+    }
+
+    if (bestId != null && bestScore >= FAQ_MATCH_THRESHOLD) {
+      const faqRes = await axios.get(`${IA_APP_BASE_URL}/api/faq/perguntas/${bestId}`, { timeout: 10000 });
+      const { pergunta, respostas } = faqRes.data || {};
+      if (pergunta && respostas && respostas.length) {
+        await axios.post(`${IA_APP_BASE_URL}/api/faq/perguntas/${bestId}/incrementar-frequencia`, {}, { timeout: 5000 }).catch(() => {});
+        let msg = '📌 *Pergunta:*\n' + (pergunta.texto || '').trim() + '\n\n';
+        respostas.forEach((r) => {
+          msg += '💬 *' + (r.gestora_nome || 'Gestora') + ':*\n' + (r.texto || '').trim() + '\n\n';
+        });
+        msg += '— Isto respondeu à tua dúvida? Se quiseres, podes reformular a pergunta.';
+        await sendText(instanceName, lead.whatsapp_number, msg);
+        return;
+      }
+    }
+
+    await axios.post(
+      `${IA_APP_BASE_URL}/api/faq/duvidas-pendentes`,
+      {
+        contacto_whatsapp: number,
+        lead_id: lead.id,
+        texto: text.trim(),
+        origem: 'evo',
+      },
+      { headers: { 'Content-Type': 'application/json' }, timeout: 10000 }
+    ).catch((err) => console.error('createDuvidaPendente:', err.response?.data || err.message));
+
+    await sendText(
+      instanceName,
+      lead.whatsapp_number,
+      'Não encontrei uma resposta pronta para esta dúvida. Uma gestora vai analisar e responder em breve por aqui. Se quiseres, podes reformular a pergunta.'
+    );
+  } catch (err) {
+    console.error('answerWithFAQ:', err.response?.data || err.message);
+    await sendText(
+      instanceName,
+      lead.whatsapp_number,
+      'Ocorreu um erro ao procurar a resposta. Tenta de novo ou escreve GESTORA para falar com a gestora.'
+    );
+  }
+}
+
+// IA para dúvidas (fallback se FAQ não existir ou para compatibilidade)
 async function answerWithAI(lead, text, instanceName) {
   if (!text.trim()) return;
   if (!openai || !OPENAI_API_KEY) {
@@ -202,7 +344,6 @@ async function answerWithAI(lead, text, instanceName) {
     let reply = completion.choices[0]?.message?.content?.trim();
     if (!reply) return;
 
-    // A cada 3 respostas, lembrar opções de navegação
     const leadKey = String(lead.id);
     aiReplyCountByLead[leadKey] = (aiReplyCountByLead[leadKey] || 0) + 1;
     if (aiReplyCountByLead[leadKey] % 3 === 0) {
@@ -324,7 +465,7 @@ async function handleIncomingMessage({ remoteJid, text, instanceName, profileNam
       return;
     }
 
-    await answerWithAI(lead, text, instanceName);
+    await answerWithFAQ(lead, text, instanceName);
     if (lead.estado_conversa === 'com_gestora' && lead.estado_docs === 'aguardando_docs') {
       const uploadLink = `${process.env.UPLOAD_BASE_URL || 'https://ia.rafaapelomundo.com'}/upload/${lead.id}`;
       await sendText(
