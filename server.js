@@ -443,9 +443,6 @@ async function answerWithFAQ(lead, text, instanceName) {
           const score = cosineSimilarity(queryEmbedding, arr);
           if (score > bestDuvidaScore) bestDuvidaScore = score;
         }
-        if (process.env.NODE_ENV !== 'production') {
-          console.log('Dúvida duplicada? bestScore=', bestDuvidaScore?.toFixed(4), 'threshold=', DUVIDA_DUPLICATE_THRESHOLD);
-        }
         if (bestDuvidaScore >= DUVIDA_DUPLICATE_THRESHOLD) {
           await sendText(
             instanceName,
