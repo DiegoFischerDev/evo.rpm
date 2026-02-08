@@ -291,7 +291,7 @@ async function notifyAdminFalarComRafa(instanceName, lead, remoteJid) {
 
 const EMBEDDING_MODEL = process.env.OPENAI_EMBEDDING_MODEL || 'text-embedding-3-small';
 const FAQ_MATCH_THRESHOLD = Number(process.env.FAQ_MATCH_THRESHOLD) || 0.78;
-const DUVIDA_DUPLICATE_THRESHOLD = Number(process.env.DUVIDA_DUPLICATE_THRESHOLD) || 0.86;
+const DUVIDA_DUPLICATE_THRESHOLD = Number(process.env.DUVIDA_DUPLICATE_THRESHOLD) || 0.82;
 
 function norm(v) {
   let s = 0;
@@ -307,7 +307,11 @@ function dot(a, b) {
 }
 
 function cosineSimilarity(a, b) {
-  return dot(a, b) / (norm(a) * norm(b));
+  if (!Array.isArray(a) || !Array.isArray(b) || a.length === 0 || b.length === 0) return 0;
+  const n = norm(a) * norm(b);
+  if (!n || n === 0) return 0;
+  const s = dot(a, b) / n;
+  return Number.isFinite(s) ? s : 0;
 }
 
 async function getEmbedding(text) {
@@ -427,6 +431,7 @@ async function answerWithFAQ(lead, text, instanceName) {
               }
             }
           }
+          if (Buffer.isBuffer(arr)) arr = arr.toString('utf8');
           if (typeof arr === 'string') {
             try {
               arr = JSON.parse(arr);
@@ -437,6 +442,9 @@ async function answerWithFAQ(lead, text, instanceName) {
           if (!Array.isArray(arr) || arr.length === 0) continue;
           const score = cosineSimilarity(queryEmbedding, arr);
           if (score > bestDuvidaScore) bestDuvidaScore = score;
+        }
+        if (process.env.NODE_ENV !== 'production') {
+          console.log('Dúvida duplicada? bestScore=', bestDuvidaScore?.toFixed(4), 'threshold=', DUVIDA_DUPLICATE_THRESHOLD);
         }
         if (bestDuvidaScore >= DUVIDA_DUPLICATE_THRESHOLD) {
           await sendText(
