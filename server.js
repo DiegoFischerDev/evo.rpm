@@ -302,21 +302,35 @@ async function answerWithFAQ(lead, text, instanceName) {
   try {
     let perguntas = await db.getPerguntasWithEmbeddings();
     if (!perguntas || !perguntas.length) {
-      await axios.post(
-        `${IA_APP_BASE_URL}/api/faq/duvidas-pendentes`,
-        {
-          contacto_whatsapp: number,
-          lead_id: lead.id,
-          texto: text.trim(),
-          origem: 'evo',
-        },
-        { headers: { 'Content-Type': 'application/json' }, timeout: 10000 }
-      ).catch((err) => console.error('createDuvidaPendente (sem FAQ):', err.response?.data || err.message));
-      await sendText(
-        instanceName,
-        lead.whatsapp_number,
-        'Ainda não temos respostas para essa pergunta. Enviamos sua dúvida para as gestoras e assim que tivermos um retorno delas eu vou te avisando por aqui ok? Fique à vontade para fazer outras perguntas 😊'
-      );
+      let created = false;
+      try {
+        const res = await axios.post(
+          `${IA_APP_BASE_URL}/api/faq/duvidas-pendentes`,
+          {
+            contacto_whatsapp: number,
+            lead_id: lead.id,
+            texto: text.trim(),
+            origem: 'evo',
+          },
+          { headers: { 'Content-Type': 'application/json' }, timeout: 10000 }
+        );
+        created = res && res.status >= 200 && res.status < 300;
+      } catch (err) {
+        console.error('createDuvidaPendente (sem FAQ):', err.response?.data || err.message);
+      }
+      if (created) {
+        await sendText(
+          instanceName,
+          lead.whatsapp_number,
+          'Ainda não temos respostas para essa pergunta. Enviamos sua dúvida para as gestoras e assim que tivermos um retorno delas eu vou te avisando por aqui ok? Fique à vontade para fazer outras perguntas 😊'
+        );
+      } else {
+        await sendText(
+          instanceName,
+          lead.whatsapp_number,
+          'Ocorreu um erro ao registar a tua dúvida. Por favor tenta novamente dentro de momentos ou escreve FALAR COM RAFA e vamos te ajudar.'
+        );
+      }
       return;
     }
 
@@ -380,22 +394,35 @@ async function answerWithFAQ(lead, text, instanceName) {
       }
     }
 
-    await axios.post(
-      `${IA_APP_BASE_URL}/api/faq/duvidas-pendentes`,
-      {
-        contacto_whatsapp: number,
-        lead_id: lead.id,
-        texto: text.trim(),
-        origem: 'evo',
-      },
-      { headers: { 'Content-Type': 'application/json' }, timeout: 10000 }
-    ).catch((err) => console.error('createDuvidaPendente:', err.response?.data || err.message));
-
-    await sendText(
-      instanceName,
-      lead.whatsapp_number,
-      'Não encontrei uma resposta pronta para esta dúvida. Uma gestora vai analisar e responder em breve por aqui. Se quiseres, podes reformular a pergunta.'
-    );
+    let createdDuvida = false;
+    try {
+      const res = await axios.post(
+        `${IA_APP_BASE_URL}/api/faq/duvidas-pendentes`,
+        {
+          contacto_whatsapp: number,
+          lead_id: lead.id,
+          texto: text.trim(),
+          origem: 'evo',
+        },
+        { headers: { 'Content-Type': 'application/json' }, timeout: 10000 }
+      );
+      createdDuvida = res && res.status >= 200 && res.status < 300;
+    } catch (err) {
+      console.error('createDuvidaPendente:', err.response?.data || err.message);
+    }
+    if (createdDuvida) {
+      await sendText(
+        instanceName,
+        lead.whatsapp_number,
+        'Não encontrei uma resposta pronta para esta dúvida. Uma gestora vai analisar e responder em breve por aqui. Se quiseres, podes reformular a pergunta.'
+      );
+    } else {
+      await sendText(
+        instanceName,
+        lead.whatsapp_number,
+        'Ocorreu um erro ao registar a tua dúvida. Por favor tenta novamente dentro de momentos ou escreve FALAR COM RAFA e vamos te ajudar.'
+      );
+    }
   } catch (err) {
     console.error('answerWithFAQ:', err.response?.data || err.message);
     await sendText(
