@@ -60,6 +60,32 @@ app.post('/api/internal/send-text', (req, res) => {
     });
 });
 
+// Atualizar embedding de uma pergunta (chamado pelo ia-app quando o admin edita o texto da pergunta)
+app.post('/api/internal/atualizar-embedding-pergunta', async (req, res) => {
+  if (EVO_INTERNAL_SECRET && req.get('X-Internal-Secret') !== EVO_INTERNAL_SECRET) {
+    return res.status(403).json({ message: 'Forbidden' });
+  }
+  const perguntaId = req.body && req.body.pergunta_id != null ? Number(req.body.pergunta_id) : null;
+  const texto = req.body && req.body.texto != null ? String(req.body.texto).trim() : '';
+  if (!perguntaId || !Number.isInteger(perguntaId) || perguntaId < 1) {
+    return res.status(400).json({ message: 'pergunta_id (número) é obrigatório.' });
+  }
+  if (!texto) {
+    return res.status(400).json({ message: 'texto é obrigatório.' });
+  }
+  try {
+    const emb = await getEmbedding(texto);
+    if (!emb) {
+      return res.status(500).json({ message: 'Não foi possível gerar o embedding.' });
+    }
+    await db.savePerguntaEmbedding(perguntaId, emb);
+    res.json({ ok: true });
+  } catch (err) {
+    console.error('atualizar-embedding-pergunta:', err.message);
+    res.status(500).json({ message: err.message || 'Erro ao atualizar embedding.' });
+  }
+});
+
 // Diagnóstico: verifica env e conectividade à Evolution API (sem expor chaves)
 app.get('/api/debug', async (req, res) => {
   const env = {
