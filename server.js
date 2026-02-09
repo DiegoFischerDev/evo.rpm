@@ -173,8 +173,8 @@ function isCommand(text, variants) {
 }
 
 // ---------- Simulador de primeira parcela ----------
-const SIMULADOR_EURIBOR = Number(process.env.SIMULADOR_EURIBOR) || 3.5;
-const SIMULADOR_SPREAD = Number(process.env.SIMULADOR_SPREAD) || 0.5;
+const SIMULADOR_EURIBOR = Number(process.env.SIMULADOR_EURIBOR) || 2;
+const SIMULADOR_SPREAD = Number(process.env.SIMULADOR_SPREAD) || 0.7;
 const SIMULADOR_IDADE_MAXIMA = 70; // muitos bancos só financiam até aos 70 anos
 const SIMULADOR_LTV = 0.9; // 90% do valor do imóvel
 
@@ -294,7 +294,11 @@ async function handleSimuladorStep(instanceName, leadId, remoteJid, text) {
     const t = normalizeText(text);
     if (t === 'nao' || t === 'não' || t === 'nao obrigado' || t === 'não obrigado' || t === 'obrigado' || t === 'obrigada') {
       await db.clearSimuladorState(leadId);
-      await sendText(instanceName, remoteJid, 'Ok! Quando quiseres, escreve SIMULADOR para uma nova simulação ou GESTORA para avançar com a análise.');
+      await sendText(
+        instanceName,
+        remoteJid,
+        'Ok! Para continuar, escreve uma das opções:\n\nDUVIDA – dúvidas sobre crédito habitação\nSIMULADOR – nova simulação de parcela\nGESTORA – falar com a gestora e iniciar a análise\nFALAR COM RAFA – falar diretamente com a Rafa'
+      );
       return true;
     }
     if (t === 'sim' || t === 'quero' || t === 'queria') {
