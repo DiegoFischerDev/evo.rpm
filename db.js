@@ -105,6 +105,42 @@ async function saveDuvidaEmbedding(duvidaId, embedding) {
   await query('UPDATE ch_duvidas SET embedding = ? WHERE id = ?', [payload, duvidaId]);
 }
 
+// ---------- Estado do simulador (por lead) ----------
+async function getSimuladorState(leadId) {
+  const rows = await query(
+    'SELECT simulador_step AS step, simulador_age AS age, simulador_valor_imovel AS valorImovel, simulador_anos AS anos FROM ch_leads WHERE id = ?',
+    [leadId]
+  );
+  const r = rows[0];
+  if (!r || !r.step) return null;
+  return {
+    step: r.step,
+    age: r.age != null ? Number(r.age) : undefined,
+    valorImovel: r.valorImovel != null ? Number(r.valorImovel) : undefined,
+    anos: r.anos != null ? Number(r.anos) : undefined,
+  };
+}
+
+async function setSimuladorState(leadId, state) {
+  await query(
+    'UPDATE ch_leads SET simulador_step = ?, simulador_age = ?, simulador_valor_imovel = ?, simulador_anos = ?, updated_at = NOW() WHERE id = ?',
+    [
+      state.step || null,
+      state.age != null ? state.age : null,
+      state.valorImovel != null ? state.valorImovel : null,
+      state.anos != null ? state.anos : null,
+      leadId,
+    ]
+  );
+}
+
+async function clearSimuladorState(leadId) {
+  await query(
+    'UPDATE ch_leads SET simulador_step = NULL, simulador_age = NULL, simulador_valor_imovel = NULL, simulador_anos = NULL, updated_at = NOW() WHERE id = ?',
+    [leadId]
+  );
+}
+
 module.exports = {
   getPool,
   query,
@@ -114,5 +150,8 @@ module.exports = {
   normalizeNumber,
   getDuvidasWithEmbeddings,
   saveDuvidaEmbedding,
+  getSimuladorState,
+  setSimuladorState,
+  clearSimuladorState,
 };
 

@@ -178,12 +178,6 @@ const SIMULADOR_SPREAD = Number(process.env.SIMULADOR_SPREAD) || 0.5;
 const SIMULADOR_IDADE_MAXIMA = 70; // muitos bancos só financiam até aos 70 anos
 const SIMULADOR_LTV = 0.9; // 90% do valor do imóvel
 
-const simuladorStateByLead = new Map();
-
-function getSimuladorKey(instanceName, leadId) {
-  return `sim:${instanceName || ''}:${leadId}`;
-}
-
 /** Prazo máximo em anos (até aos 70), entre 5 e 40 anos. */
 function prazoMaximoAnos(idade) {
   const anos = SIMULADOR_IDADE_MAXIMA - idade;
@@ -257,8 +251,7 @@ async function enviarResultadoSimulador(instanceName, remoteJid, valorImovel, id
 }
 
 async function handleSimuladorStep(instanceName, leadId, remoteJid, text) {
-  const key = getSimuladorKey(instanceName, leadId);
-  const state = simuladorStateByLead.get(key);
+  const state = await db.getSimuladorState(leadId);
   if (!state) return false;
 
   if (state.step === 'age') {
@@ -267,9 +260,7 @@ async function handleSimuladorStep(instanceName, leadId, remoteJid, text) {
       await sendText(instanceName, remoteJid, 'Por favor indica a tua idade em número (por exemplo: 35).');
       return true;
     }
-    state.step = 'valor_imovel';
-    state.age = age;
-    simuladorStateByLead.set(key, state);
+    await db.setSimuladorState(leadId, { step: 'valor_imovel', age });
     await sendText(
       instanceName,
       remoteJid,
@@ -288,12 +279,9 @@ async function handleSimuladorStep(instanceName, leadId, remoteJid, text) {
       );
       return true;
     }
-    state.valorImovel = valor;
     const anos = prazoMaximoAnos(state.age);
-    state.anos = anos;
     await enviarResultadoSimulador(instanceName, remoteJid, valor, state.age, anos);
-    state.step = 'pergunta_nova_simulacao';
-    simuladorStateByLead.set(key, state);
+    await db.setSimuladorState(leadId, { step: 'pergunta_nova_simulacao', age: state.age, valorImovel: valor, anos });
     await sendText(
       instanceName,
       remoteJid,
@@ -305,14 +293,13 @@ async function handleSimuladorStep(instanceName, leadId, remoteJid, text) {
   if (state.step === 'pergunta_nova_simulacao') {
     const t = normalizeText(text);
     if (t === 'nao' || t === 'não' || t === 'nao obrigado' || t === 'não obrigado' || t === 'obrigado' || t === 'obrigada') {
-      simuladorStateByLead.delete(key);
+      await db.clearSimuladorState(leadId);
       await sendText(instanceName, remoteJid, 'Ok! Quando quiseres, escreve SIMULADOR para uma nova simulação ou GESTORA para avançar com a análise.');
       return true;
     }
     if (t === 'sim' || t === 'quero' || t === 'queria') {
-      state.step = 'nova_simulacao';
+      await db.setSimuladorState(leadId, { step: 'nova_simulacao', age: state.age, valorImovel: state.valorImovel, anos: state.anos });
       const maxAnos = prazoMaximoAnos(state.age);
-      simuladorStateByLead.set(key, state);
       await sendText(
         instanceName,
         remoteJid,
@@ -343,11 +330,8 @@ async function handleSimuladorStep(instanceName, leadId, remoteJid, text) {
       const maxAnos = prazoMaximoAnos(state.age);
       anos = Math.min(maxAnos, Math.max(5, parsed.anos));
     }
-    state.valorImovel = valorImovel;
-    state.anos = anos;
     await enviarResultadoSimulador(instanceName, remoteJid, valorImovel, state.age, anos);
-    state.step = 'pergunta_nova_simulacao';
-    simuladorStateByLead.set(key, state);
+    await db.setSimuladorState(leadId, { step: 'pergunta_nova_simulacao', age: state.age, valorImovel, anos });
     await sendText(
       instanceName,
       remoteJid,
@@ -789,8 +773,7 @@ async function handleIncomingMessage({ remoteJid, text, instanceName, profileNam
 
   // Comando SIMULADOR: inicia o fluxo em qualquer estado
   if (isCommand(text, CMD_SIMULADOR)) {
-    const key = getSimuladorKey(instanceName, lead.id);
-    simuladorStateByLead.set(key, { step: 'age' });
+    await db.setSimuladorState(lead.id, { step: 'age' });
     const intro =
       'Os valores que vou apresentar são calculados de forma aproximada, considerando a Euribor atual de ' +
       SIMULADOR_EURIBOR + '% e um spread fixo de ' + SIMULADOR_SPREAD + '% para o cálculo da primeira parcela. ' +
