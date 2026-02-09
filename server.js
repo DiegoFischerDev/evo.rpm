@@ -261,11 +261,24 @@ async function sendText(instanceName, remoteJid, text) {
     return;
   }
   const instance = instanceName || EVOLUTION_INSTANCE;
-  const number = typeof remoteJid === 'string' && remoteJid.includes('@') ? db.normalizeNumber(remoteJid) : (remoteJid || '').replace(/\D/g, '');
+  const number =
+    typeof remoteJid === 'string' && remoteJid.includes('@')
+      ? db.normalizeNumber(remoteJid)
+      : (remoteJid || '').replace(/\D/g, '');
   if (!number) return;
+  // Prefixo padrão para mensagens enviadas pela Joana para leads
+  const adminNumber = (ADMIN_WHATSAPP || '').replace(/\D/g, '');
+  const isAdmin = adminNumber && number === adminNumber;
+  let finalText = text || '';
+  if (!isAdmin) {
+    const prefix = '🤖 Joana: ';
+    if (!finalText.startsWith('🤖 Joana')) {
+      finalText = prefix + finalText;
+    }
+  }
   await axios.post(
     `${EVOLUTION_URL}/message/sendText/${instance}`,
-    { number, text },
+    { number, text: finalText },
     {
       headers: {
         'Content-Type': 'application/json',
