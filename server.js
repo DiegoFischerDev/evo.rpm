@@ -257,7 +257,7 @@ async function handleSimuladorStep(instanceName, leadId, remoteJid, text) {
   if (state.step === 'age') {
     const age = parseAge(text);
     if (age === null) {
-      await sendText(instanceName, remoteJid, 'Por favor indica a tua idade em número (por exemplo: 35).');
+      await sendText(instanceName, remoteJid, 'Por favor indica a tua idade em número (por exemplo: 35)');
       return true;
     }
     await db.setSimuladorState(leadId, { step: 'valor_imovel', age });
