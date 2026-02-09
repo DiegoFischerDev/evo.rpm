@@ -173,7 +173,8 @@ function isCommand(text, variants) {
 }
 
 // ---------- Simulador de primeira parcela ----------
-const SIMULADOR_EURIBOR_DEFAULT = Number(process.env.SIMULADOR_EURIBOR) || 2;
+// Fallback Euribor 3M quando a API BCE falha (ex.: ref. 06/02/2026: 1,999%)
+const SIMULADOR_EURIBOR_DEFAULT = Number(process.env.SIMULADOR_EURIBOR) || 1.999;
 const SIMULADOR_SPREAD = Number(process.env.SIMULADOR_SPREAD) || 0.7;
 const SIMULADOR_IDADE_MAXIMA = 70; // muitos bancos só financiam até aos 70 anos
 
@@ -181,18 +182,19 @@ const SIMULADOR_IDADE_MAXIMA = 70; // muitos bancos só financiam até aos 70 an
 let euribor3mCache = { value: null, fetchedAt: 0 };
 const EURIBOR_CACHE_MS = 12 * 60 * 60 * 1000;
 
-/** Obtém a taxa Euribor 3 meses (API gratuita BCE). Usa cache de 12h. Fallback para SIMULADOR_EURIBOR. */
+/** Obtém a taxa Euribor 3 meses (API ECB Data Portal - EDP). Usa cache de 12h. Fallback para SIMULADOR_EURIBOR. */
 async function getEuribor3M() {
   if (euribor3mCache.value != null && Date.now() - euribor3mCache.fetchedAt < EURIBOR_CACHE_MS) {
     return euribor3mCache.value;
   }
+  // Apenas ECB Data Portal API (EDP). SDW (sdw-wsrest) foi descontinuado em out/2025.
   const urls = [
-    'https://sdw-wsrest.ecb.europa.eu/service/data/FM/M.U2.EUR.RT.MM.EURIBOR3MD_.HSTA?lastNObservations=1&format=jsondata',
     'https://data-api.ecb.europa.eu/service/data/FM/M.U2.EUR.RT.MM.EURIBOR3MD_.HSTA?lastNObservations=1&format=jsondata',
+    'https://data-api.ecb.europa.eu/service/data/RTD/M.S0.N.C_EUR3M.E?lastNObservations=1&format=jsondata',
   ];
   for (const url of urls) {
     try {
-      const res = await axios.get(url, { timeout: 10000 });
+      const res = await axios.get(url, { timeout: 15000 });
       const data = res.data;
       let value = null;
       // Estrutura ECB dataSets/series/observations
@@ -211,6 +213,23 @@ async function getEuribor3M() {
           }
         }
       }
+      // Estrutura alternativa: dataSets na raiz (algumas respostas EDP)
+      if (value == null && data && data.dataSets && data.dataSets[0]) {
+        const ds = data.dataSets[0];
+        const series = ds.series || ds.Series;
+        if (series) {
+          const keys = Object.keys(series);
+          const first = series[keys[0]];
+          const obs = first && (first.observations || first.Obs);
+          if (obs && typeof obs === 'object') {
+            const obsKeys = Object.keys(obs).sort((a, b) => Number(a) - Number(b));
+            const lastKey = obsKeys[obsKeys.length - 1];
+            const o = obs[lastKey];
+            const arr = Array.isArray(o) ? o : (o && (o['@OBS_VALUE'] != null ? [o['@OBS_VALUE']] : [o.OBS_VALUE]));
+            if (arr && arr.length) value = parseFloat(arr[arr.length - 1]);
+          }
+        }
+      }
       // Estrutura alternativa: GenericData / Series / Obs com @OBS_VALUE
       if (value == null && data && data.GenericData && data.GenericData.DataSet && data.GenericData.DataSet.Series) {
         const series = data.GenericData.DataSet.Series;
@@ -223,12 +242,14 @@ async function getEuribor3M() {
       }
       if (value != null && !Number.isNaN(value) && value > 0 && value < 20) {
         euribor3mCache = { value, fetchedAt: Date.now() };
+        console.log('Euribor 3M (API BCE):', value + '%');
         return value;
       }
     } catch (err) {
       console.error('getEuribor3M', url, err.message);
     }
   }
+  console.warn('Euribor 3M: API indisponível, a usar valor por defeito', SIMULADOR_EURIBOR_DEFAULT + '%');
   return SIMULADOR_EURIBOR_DEFAULT;
 }
 
