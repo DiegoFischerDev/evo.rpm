@@ -165,10 +165,198 @@ function getFirstName(fullName) {
 const CMD_DUVIDA = ['duvida', 'duvidas'];
 const CMD_GESTORA = ['gestora'];
 const CMD_FALAR_COM_RAFA = ['falar com rafa'];
+const CMD_SIMULADOR = ['simulador'];
 
 function isCommand(text, variants) {
   const t = normalizeText(text);
   return variants.includes(t);
+}
+
+// ---------- Simulador de primeira parcela ----------
+const SIMULADOR_EURIBOR = Number(process.env.SIMULADOR_EURIBOR) || 3.5;
+const SIMULADOR_SPREAD = Number(process.env.SIMULADOR_SPREAD) || 0.5;
+const SIMULADOR_IDADE_MAXIMA = 70; // muitos bancos só financiam até aos 70 anos
+const SIMULADOR_LTV = 0.9; // 90% do valor do imóvel
+
+const simuladorStateByLead = new Map();
+
+function getSimuladorKey(instanceName, leadId) {
+  return `sim:${instanceName || ''}:${leadId}`;
+}
+
+/** Prazo máximo em anos (até aos 70), entre 5 e 40 anos. */
+function prazoMaximoAnos(idade) {
+  const anos = SIMULADOR_IDADE_MAXIMA - idade;
+  return Math.min(40, Math.max(5, anos));
+}
+
+function parseAge(str) {
+  const s = (str || '').trim().replace(/\s/g, '');
+  const n = parseInt(s, 10);
+  if (!Number.isFinite(n) || n < 18 || n > 100) return null;
+  return n;
+}
+
+function parseValorImovel(str) {
+  const s = (str || '').trim().replace(/\s/g, '').replace(/\./g, '').replace(',', '.');
+  const n = parseFloat(s);
+  if (!Number.isFinite(n)) return null;
+  if (n >= 80 && n < 100) return n * 1000; // 80 -> 80000
+  if (n >= 80000 && n <= 400000) return n;
+  if (n >= 80 && n <= 400) return n * 1000; // 80 a 400 em milhares
+  return null;
+}
+
+/** Interpreta número como anos (5–50) ou valor (80k–400k). Retorna { anos } ou { valor } ou null. */
+function parseAnosOuValor(str) {
+  const s = (str || '').trim().replace(/\s/g, '').replace(/\./g, '').replace(',', '.');
+  const n = parseFloat(s);
+  if (!Number.isFinite(n)) return null;
+  const asAnos = parseInt(n, 10);
+  if (asAnos >= 5 && asAnos <= 50 && asAnos === n) return { anos: asAnos };
+  if (n >= 80000 && n <= 400000) return { valor: n };
+  if (n >= 80 && n <= 400) return { valor: n * 1000 };
+  return null;
+}
+
+function calcularPrestacaoMensal(principal, taxaAnualPercent, anos) {
+  const r = taxaAnualPercent / 100 / 12;
+  const n = anos * 12;
+  if (r === 0) return principal / n;
+  const factor = Math.pow(1 + r, n);
+  return principal * (r * factor) / (factor - 1);
+}
+
+function calcularSeguroImovelMensal(valorImovel) {
+  return Math.round(valorImovel * 0.00012 * 10) / 10; // ~0.012% valor/ mês (média multirrisco)
+}
+
+function calcularSeguroCreditoMensal(idade, capital) {
+  const base = 0.12;
+  const ageFactor = 1 + (idade - 30) * 0.018;
+  const premio = (capital / 1000) * base * Math.max(0.5, ageFactor);
+  return Math.round(premio * 10) / 10;
+}
+
+async function enviarResultadoSimulador(instanceName, remoteJid, valorImovel, idade, anos) {
+  const capital = Math.round(valorImovel * SIMULADOR_LTV);
+  const taxaAnual = SIMULADOR_EURIBOR + SIMULADOR_SPREAD;
+  const prestacao = calcularPrestacaoMensal(capital, taxaAnual, anos);
+  const seguroImovel = calcularSeguroImovelMensal(valorImovel);
+  const seguroCredito = calcularSeguroCreditoMensal(idade, capital);
+  const total = Math.round((prestacao + seguroImovel + seguroCredito) * 100) / 100;
+  const prestacaoR = Math.round(prestacao * 100) / 100;
+  const msg =
+    '📊 *Estimativa da primeira parcela* (' + anos + ' anos)\n\n' +
+    '• Prestação ao banco: ' + prestacaoR.toFixed(2) + ' €\n' +
+    '• Seguro multirrisco (média): ' + seguroImovel.toFixed(2) + ' €\n' +
+    '• Seguro de crédito (média): ' + seguroCredito.toFixed(2) + ' €\n\n' +
+    '*Total primeira parcela:* ' + total.toFixed(2) + ' €\n\n' +
+    '(Valores aproximados. A prestação pode variar com a Euribor e o seguro de crédito com a idade. Para uma análise personalizada, escreve GESTORA.)';
+  await sendText(instanceName, remoteJid, msg);
+}
+
+async function handleSimuladorStep(instanceName, leadId, remoteJid, text) {
+  const key = getSimuladorKey(instanceName, leadId);
+  const state = simuladorStateByLead.get(key);
+  if (!state) return false;
+
+  if (state.step === 'age') {
+    const age = parseAge(text);
+    if (age === null) {
+      await sendText(instanceName, remoteJid, 'Por favor indica a tua idade em número (por exemplo: 35).');
+      return true;
+    }
+    state.step = 'valor_imovel';
+    state.age = age;
+    simuladorStateByLead.set(key, state);
+    await sendText(
+      instanceName,
+      remoteJid,
+      'Qual é o valor do imóvel que tens em mente? (entre 80 000 e 400 000 euros)'
+    );
+    return true;
+  }
+
+  if (state.step === 'valor_imovel') {
+    const valor = parseValorImovel(text);
+    if (valor === null || valor < 80000 || valor > 400000) {
+      await sendText(
+        instanceName,
+        remoteJid,
+        'Por favor indica o valor do imóvel entre 80 000 e 400 000 euros (por exemplo: 200000 ou 200 000).'
+      );
+      return true;
+    }
+    state.valorImovel = valor;
+    const anos = prazoMaximoAnos(state.age);
+    state.anos = anos;
+    await enviarResultadoSimulador(instanceName, remoteJid, valor, state.age, anos);
+    state.step = 'pergunta_nova_simulacao';
+    simuladorStateByLead.set(key, state);
+    await sendText(
+      instanceName,
+      remoteJid,
+      'Queres simular com outro valor de imóvel ou com um prazo de financiamento menor? Responde SIM ou NÃO.'
+    );
+    return true;
+  }
+
+  if (state.step === 'pergunta_nova_simulacao') {
+    const t = normalizeText(text);
+    if (t === 'nao' || t === 'não' || t === 'nao obrigado' || t === 'não obrigado' || t === 'obrigado' || t === 'obrigada') {
+      simuladorStateByLead.delete(key);
+      await sendText(instanceName, remoteJid, 'Ok! Quando quiseres, escreve SIMULADOR para uma nova simulação ou GESTORA para avançar com a análise.');
+      return true;
+    }
+    if (t === 'sim' || t === 'quero' || t === 'queria') {
+      state.step = 'nova_simulacao';
+      const maxAnos = prazoMaximoAnos(state.age);
+      simuladorStateByLead.set(key, state);
+      await sendText(
+        instanceName,
+        remoteJid,
+        'Indica o novo valor do imóvel em euros (80 000 a 400 000) ou o número de anos do financiamento (ex.: 20). O prazo máximo para a tua idade é ' + maxAnos + ' anos.'
+      );
+      return true;
+    }
+    await sendText(instanceName, remoteJid, 'Responde SIM para simular de novo ou NÃO para terminar.');
+    return true;
+  }
+
+  if (state.step === 'nova_simulacao') {
+    const parsed = parseAnosOuValor(text);
+    if (!parsed) {
+      await sendText(
+        instanceName,
+        remoteJid,
+        'Indica um valor entre 80 000 e 400 000 euros ou um número de anos entre 5 e ' + prazoMaximoAnos(state.age) + ' (ex.: 200000 ou 25).'
+      );
+      return true;
+    }
+    let valorImovel = state.valorImovel;
+    let anos = state.anos;
+    if (parsed.valor != null) {
+      valorImovel = parsed.valor;
+      anos = prazoMaximoAnos(state.age);
+    } else {
+      const maxAnos = prazoMaximoAnos(state.age);
+      anos = Math.min(maxAnos, Math.max(5, parsed.anos));
+    }
+    state.valorImovel = valorImovel;
+    state.anos = anos;
+    await enviarResultadoSimulador(instanceName, remoteJid, valorImovel, state.age, anos);
+    state.step = 'pergunta_nova_simulacao';
+    simuladorStateByLead.set(key, state);
+    await sendText(
+      instanceName,
+      remoteJid,
+      'Queres simular com outro valor de imóvel ou com um prazo de financiamento menor? Responde SIM ou NÃO.'
+    );
+    return true;
+  }
+
+  return false;
 }
 
 // Deteta "boa sorte!" ou "boa sorte" (normalizado) para desativar modo falar_com_rafa
@@ -588,12 +776,29 @@ async function handleIncomingMessage({ remoteJid, text, instanceName, profileNam
     await sendText(
       instanceName,
       remoteJid,
-      `${saudacaoNome}Meu nome é Joana, sou atendente virtual da Rafa e vou te ajudar por aqui :)\r\n\r\nPara começar, escreve:\r\n\r\nDUVIDA - se tens dúvidas sobre crédito habitação\r\n\r\nGESTORA - se já queres falar com a gestora para iniciar a sua análise\r\n\r\nFALAR COM RAFA - se precisas falar diretamente com a Rafa`
+      `${saudacaoNome}Meu nome é Joana, sou atendente virtual da Rafa e vou te ajudar por aqui :)\r\n\r\nPara começar, escreve:\r\n\r\nDUVIDA - se tens dúvidas sobre crédito habitação\r\n\r\nSIMULADOR - para simular a primeira parcela do crédito\r\n\r\nGESTORA - se já queres falar com a gestora para iniciar a sua análise\r\n\r\nFALAR COM RAFA - se precisas falar diretamente com a Rafa`
     );
     return;
   }
 
   const lead = existingLead;
+
+  // Se o lead está no fluxo do simulador, tratar aqui
+  const inSimulador = await handleSimuladorStep(instanceName, lead.id, remoteJid, text);
+  if (inSimulador) return;
+
+  // Comando SIMULADOR: inicia o fluxo em qualquer estado
+  if (isCommand(text, CMD_SIMULADOR)) {
+    const key = getSimuladorKey(instanceName, lead.id);
+    simuladorStateByLead.set(key, { step: 'age' });
+    const intro =
+      'Os valores que vou apresentar são calculados de forma aproximada, considerando a Euribor atual de ' +
+      SIMULADOR_EURIBOR + '% e um spread fixo de ' + SIMULADOR_SPREAD + '% para o cálculo da primeira parcela. ' +
+      'Muitos bancos só financiam até aos 70 anos, por isso uso o prazo máximo até essa idade. ' +
+      'Esta parcela pode variar ao longo do empréstimo: a taxa de juro varia com a Euribor e o seguro de crédito tende a ficar mais caro com a idade, pois o risco para a seguradora aumenta.\n\nQual é a tua idade?';
+    await sendText(instanceName, remoteJid, intro);
+    return;
+  }
 
   // Estados: estado_conversa (aguardando_escolha | com_joana | com_gestora | com_rafa) + estado_docs (aguardando_docs | sem_docs | docs_enviados)
   if (lead.estado_conversa === 'aguardando_escolha') {
@@ -631,7 +836,7 @@ async function handleIncomingMessage({ remoteJid, text, instanceName, profileNam
     await sendText(
       instanceName,
       remoteJid,
-      'Para continuar, escreve uma das opções exatamente assim:\nDUVIDA\nGESTORA\nFALAR COM RAFA'
+      'Para continuar, escreve uma das opções exatamente assim:\nDUVIDA\nSIMULADOR\nGESTORA\nFALAR COM RAFA'
     );
     return;
   }
