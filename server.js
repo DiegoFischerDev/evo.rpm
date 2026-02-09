@@ -233,7 +233,8 @@ function consumeDuvidaBuffer(instanceName, leadId, lastMessage) {
 }
 
 const DUVIDA_BUFFER_REMINDER_MS = 1 * 60 * 1000;
-const DUVIDA_BUFFER_REMINDER_TEXT = 'Peço que ao final da sua pergunta adicione um "?" para eu entender que concluíste ok? 😊';
+const DUVIDA_BUFFER_REMINDER_TEXT =
+  '💬 Só mais um detalhe: ao final da tua pergunta adiciona um "?" para eu entender que concluíste, ok? 😊';
 const duvidaBufferTimerByKey = new Map();
 
 function clearDuvidaBufferTimer(key) {
