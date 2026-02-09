@@ -108,7 +108,7 @@ async function saveDuvidaEmbedding(duvidaId, embedding) {
 // ---------- Estado do simulador (por lead) ----------
 async function getSimuladorState(leadId) {
   const rows = await query(
-    'SELECT simulador_step AS step, simulador_age AS age, simulador_valor_imovel AS valorImovel, simulador_anos AS anos FROM ch_leads WHERE id = ?',
+    'SELECT simulador_step AS step, simulador_age AS age, simulador_valor_imovel AS valorImovel, simulador_anos AS anos, simulador_entrada AS entrada FROM ch_leads WHERE id = ?',
     [leadId]
   );
   const r = rows[0];
@@ -118,17 +118,19 @@ async function getSimuladorState(leadId) {
     age: r.age != null ? Number(r.age) : undefined,
     valorImovel: r.valorImovel != null ? Number(r.valorImovel) : undefined,
     anos: r.anos != null ? Number(r.anos) : undefined,
+    entrada: r.entrada != null ? Number(r.entrada) : undefined,
   };
 }
 
 async function setSimuladorState(leadId, state) {
   await query(
-    'UPDATE ch_leads SET simulador_step = ?, simulador_age = ?, simulador_valor_imovel = ?, simulador_anos = ?, updated_at = NOW() WHERE id = ?',
+    'UPDATE ch_leads SET simulador_step = ?, simulador_age = ?, simulador_valor_imovel = ?, simulador_anos = ?, simulador_entrada = ?, updated_at = NOW() WHERE id = ?',
     [
       state.step || null,
       state.age != null ? state.age : null,
       state.valorImovel != null ? state.valorImovel : null,
       state.anos != null ? state.anos : null,
+      state.entrada != null ? state.entrada : null,
       leadId,
     ]
   );
@@ -136,7 +138,7 @@ async function setSimuladorState(leadId, state) {
 
 async function clearSimuladorState(leadId) {
   await query(
-    'UPDATE ch_leads SET simulador_step = NULL, simulador_age = NULL, simulador_valor_imovel = NULL, simulador_anos = NULL, updated_at = NOW() WHERE id = ?',
+    'UPDATE ch_leads SET simulador_step = NULL, simulador_age = NULL, simulador_valor_imovel = NULL, simulador_anos = NULL, simulador_entrada = NULL, updated_at = NOW() WHERE id = ?',
     [leadId]
   );
 }

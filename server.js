@@ -173,10 +173,73 @@ function isCommand(text, variants) {
 }
 
 // ---------- Simulador de primeira parcela ----------
-const SIMULADOR_EURIBOR = Number(process.env.SIMULADOR_EURIBOR) || 2;
+const SIMULADOR_EURIBOR_DEFAULT = Number(process.env.SIMULADOR_EURIBOR) || 2;
 const SIMULADOR_SPREAD = Number(process.env.SIMULADOR_SPREAD) || 0.7;
 const SIMULADOR_IDADE_MAXIMA = 70; // muitos bancos só financiam até aos 70 anos
-const SIMULADOR_LTV = 0.9; // 90% do valor do imóvel
+
+// Cache da Euribor 3M (API BCE): válido 12h
+let euribor3mCache = { value: null, fetchedAt: 0 };
+const EURIBOR_CACHE_MS = 12 * 60 * 60 * 1000;
+
+/** Obtém a taxa Euribor 3 meses (API gratuita BCE). Usa cache de 12h. Fallback para SIMULADOR_EURIBOR. */
+async function getEuribor3M() {
+  if (euribor3mCache.value != null && Date.now() - euribor3mCache.fetchedAt < EURIBOR_CACHE_MS) {
+    return euribor3mCache.value;
+  }
+  const urls = [
+    'https://sdw-wsrest.ecb.europa.eu/service/data/FM/M.U2.EUR.RT.MM.EURIBOR3MD_.HSTA?lastNObservations=1&format=jsondata',
+    'https://data-api.ecb.europa.eu/service/data/FM/M.U2.EUR.RT.MM.EURIBOR3MD_.HSTA?lastNObservations=1&format=jsondata',
+  ];
+  for (const url of urls) {
+    try {
+      const res = await axios.get(url, { timeout: 10000 });
+      const data = res.data;
+      let value = null;
+      // Estrutura ECB dataSets/series/observations
+      if (data && data.data && data.data.dataSets && data.data.dataSets[0]) {
+        const ds = data.data.dataSets[0];
+        const series = ds.series;
+        if (series) {
+          const keys = Object.keys(series);
+          const first = series[keys[0]];
+          if (first && first.observations) {
+            const obsKeys = Object.keys(first.observations).sort((a, b) => Number(a) - Number(b));
+            const lastKey = obsKeys[obsKeys.length - 1];
+            const obs = first.observations[lastKey];
+            if (Array.isArray(obs) && obs.length >= 2) value = parseFloat(obs[1]);
+            else if (Array.isArray(obs) && obs.length === 1) value = parseFloat(obs[0]);
+          }
+        }
+      }
+      // Estrutura alternativa: GenericData / Series / Obs com @OBS_VALUE
+      if (value == null && data && data.GenericData && data.GenericData.DataSet && data.GenericData.DataSet.Series) {
+        const series = data.GenericData.DataSet.Series;
+        const s = Array.isArray(series) ? series[0] : series;
+        if (s && s.Obs && Array.isArray(s.Obs) && s.Obs.length) {
+          const last = s.Obs[s.Obs.length - 1];
+          const v = last['@OBS_VALUE'] != null ? last['@OBS_VALUE'] : last.OBS_VALUE;
+          if (v != null) value = parseFloat(v);
+        }
+      }
+      if (value != null && !Number.isNaN(value) && value > 0 && value < 20) {
+        euribor3mCache = { value, fetchedAt: Date.now() };
+        return value;
+      }
+    } catch (err) {
+      console.error('getEuribor3M', url, err.message);
+    }
+  }
+  return SIMULADOR_EURIBOR_DEFAULT;
+}
+
+/** Euribor atual para o simulador (valor em uso nos cálculos). */
+async function getSimuladorEuribor() {
+  if (process.env.SIMULADOR_EURIBOR != null && process.env.SIMULADOR_EURIBOR !== '') {
+    const v = Number(process.env.SIMULADOR_EURIBOR);
+    if (!Number.isNaN(v)) return v;
+  }
+  return getEuribor3M();
+}
 
 /** Prazo máximo em anos (até aos 70), entre 5 e 40 anos. */
 function prazoMaximoAnos(idade) {
@@ -191,25 +254,43 @@ function parseAge(str) {
   return n;
 }
 
+/** Valor do imóvel em euros. Aceita valor direto (ex.: 250000) ou em milhares (ex.: 250). Mínimo 5000 €. */
 function parseValorImovel(str) {
   const s = (str || '').trim().replace(/\s/g, '').replace(/\./g, '').replace(',', '.');
   const n = parseFloat(s);
-  if (!Number.isFinite(n)) return null;
-  if (n >= 80 && n < 100) return n * 1000; // 80 -> 80000
-  if (n >= 80000 && n <= 400000) return n;
-  if (n >= 80 && n <= 400) return n * 1000; // 80 a 400 em milhares
-  return null;
+  if (!Number.isFinite(n) || n <= 0) return null;
+  const asEuros = n >= 1000 ? n : n * 1000; // 250 -> 250000; 250000 -> 250000
+  if (asEuros < 5000) return null; // mínimo 5k ou 5 (milhares)
+  return Math.round(asEuros);
 }
 
-/** Interpreta número como anos (5–50) ou valor (80k–400k). Retorna { anos } ou { valor } ou null. */
+/** Número de anos de financiamento (entre 5 e maxAnos). */
+function parseAnos(str, maxAnos) {
+  const s = (str || '').trim().replace(/\s/g, '');
+  const n = parseInt(s, 10);
+  if (!Number.isFinite(n) || n < 5 || n > maxAnos) return null;
+  return n;
+}
+
+/** Valor de entrada em euros (0 até valorImovel - 1). Aceita valor direto ou em milhares. */
+function parseEntrada(str, valorImovel) {
+  const s = (str || '').trim().replace(/\s/g, '').replace(/\./g, '').replace(',', '.');
+  const n = parseFloat(s);
+  if (!Number.isFinite(n) || n < 0) return null;
+  const asEuros = n >= 1000 ? n : n * 1000;
+  if (asEuros >= valorImovel) return null;
+  return Math.round(asEuros);
+}
+
+/** Interpreta número como anos (5–50) ou valor do imóvel em euros. Retorna { anos } ou { valor } ou null. */
 function parseAnosOuValor(str) {
   const s = (str || '').trim().replace(/\s/g, '').replace(/\./g, '').replace(',', '.');
   const n = parseFloat(s);
   if (!Number.isFinite(n)) return null;
   const asAnos = parseInt(n, 10);
   if (asAnos >= 5 && asAnos <= 50 && asAnos === n) return { anos: asAnos };
-  if (n >= 80000 && n <= 400000) return { valor: n };
-  if (n >= 80 && n <= 400) return { valor: n * 1000 };
+  const valor = parseValorImovel(str);
+  if (valor != null) return { valor };
   return null;
 }
 
@@ -232,16 +313,21 @@ function calcularSeguroCreditoMensal(idade, capital) {
   return Math.round(premio * 10) / 10;
 }
 
-async function enviarResultadoSimulador(instanceName, remoteJid, valorImovel, idade, anos) {
-  const capital = Math.round(valorImovel * SIMULADOR_LTV);
-  const taxaAnual = SIMULADOR_EURIBOR + SIMULADOR_SPREAD;
+async function enviarResultadoSimulador(instanceName, remoteJid, valorImovel, idade, anos, entrada) {
+  const ent = entrada != null ? Math.round(entrada * 100) / 100 : 0;
+  const capital = Math.round((valorImovel - ent) * 100) / 100;
+  if (capital <= 0) return;
+  const euribor = await getSimuladorEuribor();
+  const taxaAnual = euribor + SIMULADOR_SPREAD;
   const prestacao = calcularPrestacaoMensal(capital, taxaAnual, anos);
   const seguroImovel = calcularSeguroImovelMensal(valorImovel);
   const seguroCredito = calcularSeguroCreditoMensal(idade, capital);
   const total = Math.round((prestacao + seguroImovel + seguroCredito) * 100) / 100;
   const prestacaoR = Math.round(prestacao * 100) / 100;
-  const msg =
-    '📊 *Estimativa da primeira parcela* (' + anos + ' anos)\n\n' +
+  let msg =
+    '📊 *Estimativa da primeira parcela* (' + anos + ' anos';
+  if (ent > 0) msg += ', entrada ' + ent.toFixed(0) + ' €';
+  msg += ')\n\n' +
     '• Prestação ao banco: ' + prestacaoR.toFixed(2) + ' €\n' +
     '• Seguro multirrisco (média): ' + seguroImovel.toFixed(2) + ' €\n' +
     '• Seguro de crédito (média): ' + seguroCredito.toFixed(2) + ' €\n\n' +
@@ -264,24 +350,63 @@ async function handleSimuladorStep(instanceName, leadId, remoteJid, text) {
     await sendText(
       instanceName,
       remoteJid,
-      'Qual é o valor do imóvel que tens em mente? (entre 80 000 e 400 000 euros)'
+      'Qual é o valor do imóvel que tens em mente? (indica o valor em euros, ex.: 200000 ou 250)'
     );
     return true;
   }
 
   if (state.step === 'valor_imovel') {
     const valor = parseValorImovel(text);
-    if (valor === null || valor < 80000 || valor > 400000) {
+    if (valor === null) {
       await sendText(
         instanceName,
         remoteJid,
-        'Por favor indica o valor do imóvel entre 80 000 e 400 000 euros (por exemplo: 200000 ou 200 000).'
+        'Por favor indica o valor do imóvel em euros (por exemplo: 200000 ou 250 para 250 000 €).'
       );
       return true;
     }
-    const anos = prazoMaximoAnos(state.age);
-    await enviarResultadoSimulador(instanceName, remoteJid, valor, state.age, anos);
-    await db.setSimuladorState(leadId, { step: 'pergunta_nova_simulacao', age: state.age, valorImovel: valor, anos });
+    const maxAnos = prazoMaximoAnos(state.age);
+    await db.setSimuladorState(leadId, { step: 'anos', age: state.age, valorImovel: valor });
+    await sendText(
+      instanceName,
+      remoteJid,
+      'Em quantos anos pretende financiar? O máximo para a tua idade (' + state.age + ' anos) é ' + maxAnos + ' anos. (ex.: ' + maxAnos + ')'
+    );
+    return true;
+  }
+
+  if (state.step === 'anos') {
+    const maxAnos = prazoMaximoAnos(state.age);
+    const anos = parseAnos(text, maxAnos);
+    if (anos === null) {
+      await sendText(
+        instanceName,
+        remoteJid,
+        'Por favor indica um número de anos entre 5 e ' + maxAnos + ' (ex.: ' + maxAnos + ').'
+      );
+      return true;
+    }
+    await db.setSimuladorState(leadId, { step: 'entrada', age: state.age, valorImovel: state.valorImovel, anos });
+    await sendText(
+      instanceName,
+      remoteJid,
+      'Quanto pretendes dar de entrada, em euros? (ex.: 20000 ou 0 se ainda não sabes)'
+    );
+    return true;
+  }
+
+  if (state.step === 'entrada') {
+    const entrada = parseEntrada(text, state.valorImovel);
+    if (entrada === null) {
+      await sendText(
+        instanceName,
+        remoteJid,
+        'Por favor indica o valor de entrada em euros (0 a ' + (state.valorImovel - 1).toFixed(0) + '). Ex.: 20000 ou 0.'
+      );
+      return true;
+    }
+    await enviarResultadoSimulador(instanceName, remoteJid, state.valorImovel, state.age, state.anos, entrada);
+    await db.setSimuladorState(leadId, { step: 'pergunta_nova_simulacao', age: state.age, valorImovel: state.valorImovel, anos: state.anos, entrada });
     await sendText(
       instanceName,
       remoteJid,
@@ -307,7 +432,7 @@ async function handleSimuladorStep(instanceName, leadId, remoteJid, text) {
       await sendText(
         instanceName,
         remoteJid,
-        'Indica o novo valor do imóvel em euros (80 000 a 400 000) ou o número de anos do financiamento (ex.: 20). O prazo máximo para a tua idade é ' + maxAnos + ' anos.'
+        'Indica o novo valor do imóvel em euros ou o número de anos do financiamento (ex.: 20). O prazo máximo para a tua idade é ' + maxAnos + ' anos.'
       );
       return true;
     }
@@ -321,7 +446,7 @@ async function handleSimuladorStep(instanceName, leadId, remoteJid, text) {
       await sendText(
         instanceName,
         remoteJid,
-        'Indica um valor entre 80 000 e 400 000 euros ou um número de anos entre 5 e ' + prazoMaximoAnos(state.age) + ' (ex.: 200000 ou 25).'
+        'Indica o valor do imóvel em euros ou um número de anos entre 5 e ' + prazoMaximoAnos(state.age) + ' (ex.: 200000 ou 25).'
       );
       return true;
     }
@@ -329,13 +454,14 @@ async function handleSimuladorStep(instanceName, leadId, remoteJid, text) {
     let anos = state.anos;
     if (parsed.valor != null) {
       valorImovel = parsed.valor;
-      anos = prazoMaximoAnos(state.age);
+      anos = state.anos; // mantém prazo anterior
     } else {
       const maxAnos = prazoMaximoAnos(state.age);
       anos = Math.min(maxAnos, Math.max(5, parsed.anos));
     }
-    await enviarResultadoSimulador(instanceName, remoteJid, valorImovel, state.age, anos);
-    await db.setSimuladorState(leadId, { step: 'pergunta_nova_simulacao', age: state.age, valorImovel, anos });
+    const entrada = state.entrada != null ? Math.min(state.entrada, valorImovel - 1) : 0;
+    await enviarResultadoSimulador(instanceName, remoteJid, valorImovel, state.age, anos, entrada);
+    await db.setSimuladorState(leadId, { step: 'pergunta_nova_simulacao', age: state.age, valorImovel, anos, entrada });
     await sendText(
       instanceName,
       remoteJid,
@@ -778,9 +904,10 @@ async function handleIncomingMessage({ remoteJid, text, instanceName, profileNam
   // Comando SIMULADOR: inicia o fluxo em qualquer estado
   if (isCommand(text, CMD_SIMULADOR)) {
     await db.setSimuladorState(lead.id, { step: 'age' });
+    const euribor = await getSimuladorEuribor();
     const intro =
-      'Os valores que vou apresentar são calculados de forma aproximada, considerando a Euribor atual de ' +
-      SIMULADOR_EURIBOR + '% e um spread fixo de ' + SIMULADOR_SPREAD + '% para o cálculo da primeira parcela. ' +
+      'Os valores que vou apresentar são calculados de forma aproximada, considerando a Euribor 3 meses atual de ' +
+      euribor.toFixed(2) + '% e um spread fixo de ' + SIMULADOR_SPREAD + '% para o cálculo da primeira parcela. ' +
       'Muitos bancos só financiam até aos 70 anos, por isso uso o prazo máximo até essa idade. ' +
       'Esta parcela pode variar ao longo do empréstimo: a taxa de juro varia com a Euribor e o seguro de crédito tende a ficar mais caro com a idade, pois o risco para a seguradora aumenta.\n\nQual é a tua idade?';
     await sendText(instanceName, remoteJid, intro);
