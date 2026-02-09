@@ -232,7 +232,7 @@ function consumeDuvidaBuffer(instanceName, leadId, lastMessage) {
   return parts.join(' ').trim();
 }
 
-const DUVIDA_BUFFER_REMINDER_MS = 2 * 60 * 1000;
+const DUVIDA_BUFFER_REMINDER_MS = 1 * 60 * 1000;
 const DUVIDA_BUFFER_REMINDER_TEXT = 'Peço que ao final da sua pergunta adicione um "?" para eu entender que concluíste ok? 😊';
 const duvidaBufferTimerByKey = new Map();
 
