@@ -324,10 +324,15 @@ async function enviarResultadoSimulador(instanceName, remoteJid, valorImovel, id
   const seguroCredito = calcularSeguroCreditoMensal(idade, capital);
   const total = Math.round((prestacao + seguroImovel + seguroCredito) * 100) / 100;
   const prestacaoR = Math.round(prestacao * 100) / 100;
-  let msg =
-    '📊 *Estimativa da primeira parcela* (' + anos + ' anos';
-  if (ent > 0) msg += ', entrada ' + ent.toFixed(0) + ' €';
-  msg += ')\n\n' +
+  const valorImovelFmt = Math.round(valorImovel).toLocaleString('pt-PT');
+  const entFmt = Math.round(ent).toLocaleString('pt-PT');
+  const msg =
+    '📊 *Estimativa da primeira parcela*\n\n' +
+    '*Dados considerados:*\n' +
+    '• Valor do imóvel: ' + valorImovelFmt + ' €\n' +
+    '• Entrada: ' + entFmt + ' €\n' +
+    '• Prazo do financiamento: ' + anos + ' anos\n\n' +
+    '*Primeira parcela:*\n' +
     '• Prestação ao banco: ' + prestacaoR.toFixed(2) + ' €\n' +
     '• Seguro multirrisco (média): ' + seguroImovel.toFixed(2) + ' €\n' +
     '• Seguro de crédito (média): ' + seguroCredito.toFixed(2) + ' €\n\n' +
