@@ -29,6 +29,7 @@ CREATE TABLE IF NOT EXISTS ch_leads (
   pending_nome VARCHAR(255) NULL,
   pending_email VARCHAR(255) NULL,
   gestora_id INT UNSIGNED NULL,
+  comentario TEXT NULL,
   created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
   updated_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
   KEY idx_ch_leads_whatsapp_number (whatsapp_number),
