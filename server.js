@@ -74,7 +74,8 @@ app.post('/api/internal/atualizar-embedding-duvida', async (req, res) => {
     return res.status(400).json({ message: 'texto é obrigatório.' });
   }
   try {
-    const emb = await getEmbedding(texto);
+    const normalized = await normalizeQuestionText(texto);
+    const emb = await getEmbedding(normalized || texto);
     if (!emb) {
       return res.status(500).json({ message: 'Não foi possível gerar o embedding.' });
     }
@@ -668,6 +669,42 @@ function cosineSimilarity(a, b) {
   return Number.isFinite(s) ? s : 0;
 }
 
+// Normaliza o texto da pergunta com IA para remover ruído e repetições,
+// mantendo o significado (usado antes de gerar embeddings).
+async function normalizeQuestionText(rawText) {
+  const text = (rawText || '').trim();
+  if (!text || !openai || !OPENAI_API_KEY) return rawText;
+  try {
+    const promptUser = text.slice(0, 800); // limitar tamanho para reduzir tokens
+    const completion = await openai.chat.completions.create({
+      model: process.env.OPENAI_MODEL || 'gpt-4o-mini',
+      messages: [
+        {
+          role: 'system',
+          content:
+            'Estás a receber mensagens de utilizadores com dúvidas sobre crédito habitação em Portugal. ' +
+            'O contexto é sempre perguntas de pessoas que querem comprar casa, sair do arrendamento, rever crédito, ' +
+            'entender taxas (Euribor, spread), seguros, prazos, aprovação, bancos em Portugal, etc. ' +
+            'Reescreve a pergunta seguinte em português de Portugal numa frase única, limpa, clara e gramaticalmente correta, ' +
+            'mantendo exatamente o mesmo significado e a intenção original. Remove repetições, emojis, cumprimentos iniciais ' +
+            '(ex.: \"olá\", \"boa noite\"), agradecimentos e texto irrelevante ou muito coloquial que não mude o sentido. ' +
+            'Se o utilizador misturar vários temas, mantém todos os temas relevantes numa pergunta só, sem inventar informação nova. ' +
+            'Não respondas à pergunta. Devolve apenas a pergunta reformulada, sem texto extra, sem aspas e sem comentários.',
+        },
+        { role: 'user', content: promptUser },
+      ],
+      max_tokens: 120,
+      temperature: 0.2,
+    });
+    const normalized = completion.choices[0]?.message?.content?.trim();
+    if (normalized && normalized.length > 0) return normalized;
+    return rawText;
+  } catch (err) {
+    console.error('normalizeQuestionText error:', err.message);
+    return rawText;
+  }
+}
+
 async function getEmbedding(text) {
   if (!openai || !text || !text.trim()) return null;
   const res = await openai.embeddings.create({
@@ -685,6 +722,10 @@ async function answerWithFAQ(lead, text, instanceName) {
   if (!number) return;
 
   try {
+    // Pergunta normalizada (IA) para usar tanto no armazenamento como nos embeddings
+    const normalizedQuestion = await normalizeQuestionText(text);
+    const baseQuestionText = (normalizedQuestion && normalizedQuestion.trim()) || text.trim();
+
     let perguntas = await db.getDuvidasWithEmbeddings(0);
     if (!perguntas || !perguntas.length) {
       let created = false;
@@ -694,7 +735,7 @@ async function answerWithFAQ(lead, text, instanceName) {
           {
             contacto_whatsapp: number,
             lead_id: lead.id,
-            texto: text.trim(),
+            texto: baseQuestionText,
             origem: 'evo',
           },
           { headers: { 'Content-Type': 'application/json' }, timeout: 10000 }
@@ -725,7 +766,8 @@ async function answerWithFAQ(lead, text, instanceName) {
       return;
     }
 
-    const queryEmbedding = await getEmbedding(text);
+    // Gerar embedding em cima da pergunta normalizada (ou original em fallback)
+    const queryEmbedding = await getEmbedding(baseQuestionText);
     if (!queryEmbedding) {
       await sendText(instanceName, lead.whatsapp_number, 'Não consegui processar a tua pergunta. Tenta reformular ou escreve GESTORA para falar com a gestora.');
       return;
@@ -734,7 +776,8 @@ async function answerWithFAQ(lead, text, instanceName) {
     for (const p of perguntas) {
       const hasEmb = p.embedding != null && (Array.isArray(p.embedding) ? p.embedding.length > 0 : (typeof p.embedding === 'string' ? p.embedding.length > 2 : false));
       if (!hasEmb && p.texto) {
-        const emb = await getEmbedding(p.texto);
+        const norm = await normalizeQuestionText(p.texto);
+        const emb = await getEmbedding((norm && norm.trim()) || p.texto);
         if (emb) {
           await db.saveDuvidaEmbedding(p.id, emb);
           p.embedding = emb;
@@ -779,7 +822,8 @@ async function answerWithFAQ(lead, text, instanceName) {
           let arr = d.embedding;
           if (arr == null || (Array.isArray(arr) && arr.length === 0) || (typeof arr === 'string' && arr.length < 3)) {
             if (d.texto && d.texto.trim()) {
-              const emb = await getEmbedding(d.texto);
+              const norm = await normalizeQuestionText(d.texto);
+              const emb = await getEmbedding((norm && norm.trim()) || d.texto);
               if (emb) {
                 await db.saveDuvidaEmbedding(d.id, emb);
                 arr = emb;
@@ -818,7 +862,7 @@ async function answerWithFAQ(lead, text, instanceName) {
         {
           contacto_whatsapp: number,
           lead_id: lead.id,
-          texto: text.trim(),
+          texto: baseQuestionText,
           origem: 'evo',
         },
         { headers: { 'Content-Type': 'application/json' }, timeout: 10000 }
