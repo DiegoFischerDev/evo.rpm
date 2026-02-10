@@ -42,7 +42,7 @@ async function createLead({ remoteJid, nome, origemInstancia }) {
   const number = normalizeNumber(remoteJid);
   await query(
     `INSERT INTO ch_leads (whatsapp_number, nome, origem_instancia, estado_conversa, estado_docs, created_at, updated_at)
-     VALUES (?, ?, ?, 'aguardando_escolha', 'aguardando_docs', NOW(), NOW())`,
+     VALUES (?, ?, ?, 'aguardando_escolha', 'sem_docs', NOW(), NOW())`,
     [number, nome || null, origemInstancia || null]
   );
   const rows = await query(

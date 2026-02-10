@@ -432,11 +432,17 @@ async function handleSimuladorStep(instanceName, leadId, remoteJid, text) {
       return true;
     }
     await enviarResultadoSimulador(instanceName, remoteJid, state.valorImovel, state.age, state.anos, entrada);
-    await db.setSimuladorState(leadId, { step: 'pergunta_nova_simulacao', age: state.age, valorImovel: state.valorImovel, anos: state.anos, entrada });
+    await db.setSimuladorState(leadId, {
+      step: 'pergunta_nova_simulacao',
+      age: state.age,
+      valorImovel: state.valorImovel,
+      anos: state.anos,
+      entrada,
+    });
     await sendText(
       instanceName,
       remoteJid,
-      'Queres simular com outro valor de imóvel ou com um prazo de financiamento menor? Responde SIM ou NÃO.'
+      'Queres simular com outro valor de imóvel ou com um prazo de financiamento diferente? Responde SIM ou NÃO.'
     );
     return true;
   }
@@ -487,11 +493,17 @@ async function handleSimuladorStep(instanceName, leadId, remoteJid, text) {
     }
     const entrada = state.entrada != null ? Math.min(state.entrada, valorImovel - 1) : 0;
     await enviarResultadoSimulador(instanceName, remoteJid, valorImovel, state.age, anos, entrada);
-    await db.setSimuladorState(leadId, { step: 'pergunta_nova_simulacao', age: state.age, valorImovel, anos, entrada });
+    await db.setSimuladorState(leadId, {
+      step: 'pergunta_nova_simulacao',
+      age: state.age,
+      valorImovel,
+      anos,
+      entrada,
+    });
     await sendText(
       instanceName,
       remoteJid,
-      'Queres simular com outro valor de imóvel ou com um prazo de financiamento menor? Responde SIM ou NÃO.'
+      'Queres simular com outro valor de imóvel ou com um prazo de financiamento diferente? Responde SIM ou NÃO.'
     );
     return true;
   }
@@ -599,8 +611,8 @@ async function sendText(instanceName, remoteJid, text) {
   const isAdmin = adminNumber && number === adminNumber;
   let finalText = text || '';
   if (!isAdmin) {
-    const prefix = '🤖 Joana: ';
-    if (!finalText.startsWith('🤖 Joana')) {
+    const prefix = '👱‍♀️ Joana: ';
+    if (!finalText.startsWith('👱‍♀️ Joana')) {
       finalText = prefix + finalText;
     }
   }
@@ -911,12 +923,21 @@ async function handleIncomingMessage({ remoteJid, text, instanceName, profileNam
       origemInstancia: instanceName,
     });
 
-    const saudacaoNome = firstName ? `Oi ${firstName}, tudo bem?\n` : 'Oi, tudo bem?\n';
+    const agora = new Date();
+    const hora = agora.getHours();
+    let saudacaoTempo = '';
+    if (hora >= 5 && hora < 12) saudacaoTempo = 'bom dia!';
+    else if (hora >= 12 && hora < 18) saudacaoTempo = 'boa tarde!';
+    else saudacaoTempo = 'boa noite!';
+
+    const saudacaoNome = firstName
+      ? `Oi ${firstName}, ${saudacaoTempo} tudo bem?\n`
+      : `Oi, ${saudacaoTempo} tudo bem?\n`;
 
     await sendText(
       instanceName,
       remoteJid,
-      `${saudacaoNome}Meu nome é Joana, sou atendente virtual da Rafa e vou te ajudar por aqui :)\r\n\r\nPara começar, escreve:\r\n\r\nDUVIDA - se tens dúvidas sobre crédito habitação\r\n\r\nSIMULADOR - para simular a primeira parcela do crédito\r\n\r\nGESTORA - se já queres falar com a gestora para iniciar a sua análise\r\n\r\nFALAR COM RAFA - se precisas falar diretamente com a Rafa`
+      `${saudacaoNome}Vou te ajudar por aqui 🙂\r\n\r\nPara começar, escreve:\r\n\r\nDUVIDA - se tens dúvidas sobre crédito habitação\r\n\r\nSIMULADOR - para simular a primeira parcela do crédito\r\n\r\nGESTORA - se já queres falar com a gestora para iniciar a sua análise\r\n\r\nFALAR COM RAFA - se precisas falar diretamente com a Rafa`
     );
     return;
   }
@@ -932,18 +953,17 @@ async function handleIncomingMessage({ remoteJid, text, instanceName, profileNam
     await db.setSimuladorState(lead.id, { step: 'age' });
     const euribor = await getSimuladorEuribor();
     const intro =
-      'Os valores que vou apresentar são calculados de forma aproximada, considerando a Euribor 3 meses atual de ' +
+      'Os valores que vou apresentar são calculados de forma aproximada, considerando a Euribor ' +
       euribor.toFixed(2) + '% e um spread fixo de ' + SIMULADOR_SPREAD + '% para o cálculo da primeira parcela. ' +
-      'Muitos bancos só financiam até aos 70 anos, por isso uso o prazo máximo até essa idade. ' +
       'Esta parcela pode variar ao longo do empréstimo: a taxa de juro varia com a Euribor e o seguro de crédito tende a ficar mais caro com a idade, pois o risco para a seguradora aumenta.\n\nQual é a tua idade?';
     await sendText(instanceName, remoteJid, intro);
     return;
   }
 
-  // Estados: estado_conversa (aguardando_escolha | com_joana | com_gestora | com_rafa) + estado_docs (aguardando_docs | sem_docs | docs_enviados)
+  // Estados: estado_conversa (aguardando_escolha | com_duvida | com_gestora | com_rafa) + estado_docs (aguardando_docs | sem_docs | docs_enviados)
   if (lead.estado_conversa === 'aguardando_escolha') {
     if (isCommand(text, CMD_DUVIDA)) {
-      await db.updateLeadState(lead.id, { conversa: 'com_joana' });
+      await db.updateLeadState(lead.id, { conversa: 'com_duvida' });
       await sendText(
         instanceName,
         remoteJid,
@@ -981,7 +1001,11 @@ async function handleIncomingMessage({ remoteJid, text, instanceName, profileNam
     return;
   }
 
-  if (lead.estado_conversa === 'com_joana' || lead.estado_docs === 'docs_enviados' || (lead.estado_conversa === 'com_gestora' && lead.estado_docs === 'aguardando_docs')) {
+  if (
+    lead.estado_conversa === 'com_duvida' ||
+    lead.estado_docs === 'docs_enviados' ||
+    (lead.estado_conversa === 'com_gestora' && lead.estado_docs === 'aguardando_docs')
+  ) {
     if (isCommand(text, CMD_GESTORA)) {
       if (lead.estado_docs !== 'docs_enviados') {
         await db.updateLeadState(lead.id, { conversa: 'com_gestora', docs: 'aguardando_docs' });
@@ -1008,7 +1032,7 @@ async function handleIncomingMessage({ remoteJid, text, instanceName, profileNam
     }
 
     let textToAnalyze = text;
-    if (lead.estado_conversa === 'com_joana') {
+    if (lead.estado_conversa === 'com_duvida') {
       if (!text.includes('?')) {
         pushDuvidaBuffer(instanceName, lead.id, text);
         scheduleDuvidaBufferReminder(instanceName, lead.id, remoteJid);
@@ -1048,7 +1072,7 @@ async function handleIncomingMessage({ remoteJid, text, instanceName, profileNam
   if (lead.estado_conversa === 'com_rafa') {
     // Resposta do lead é tratada abaixo (DUVIDA, GESTORA); "boa sorte!" é detetada em mensagens enviadas pela Rafa (fromMe) no webhook
     if (isCommand(text, CMD_DUVIDA)) {
-      await db.updateLeadState(lead.id, { conversa: 'com_joana' });
+      await db.updateLeadState(lead.id, { conversa: 'com_duvida' });
       await sendText(
         instanceName,
         remoteJid,
