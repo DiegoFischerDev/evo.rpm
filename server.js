@@ -704,10 +704,11 @@ async function answerWithFAQ(lead, text, instanceName) {
         console.error('createDuvidaPendente (sem FAQ):', err.response?.data || err.message);
       }
       if (created) {
+        await db.updateLeadState(lead.id, { conversa: 'aguardando_escolha' });
         await sendText(
           instanceName,
           lead.whatsapp_number,
-          'Ainda não temos respostas para essa pergunta. Enviamos sua dúvida para as gestoras e assim que tivermos um retorno delas eu vou te avisando por aqui ok? Fique à vontade para fazer outras perguntas 😊'
+          'Ainda não temos respostas para essa pergunta. Enviamos sua dúvida para as gestoras e assim que tivermos um retorno delas eu vou te avisando por aqui ok? Escreva DUVIDA para nova pergunta.'
         );
       } else {
         await sendText(
@@ -835,10 +836,11 @@ async function answerWithFAQ(lead, text, instanceName) {
       console.error('createDuvidaPendente:', err.response?.data || err.message);
     }
     if (createdDuvida) {
+      await db.updateLeadState(lead.id, { conversa: 'aguardando_escolha' });
       await sendText(
         instanceName,
         lead.whatsapp_number,
-        'Ainda não temos respostas para essa pergunta. Enviamos sua dúvida para as gestoras e assim que tivermos um retorno delas eu vou te avisando por aqui ok? Fique à vontade para fazer outras perguntas 😊'
+        'Ainda não temos respostas para essa pergunta. Enviamos sua dúvida para as gestoras e assim que tivermos um retorno delas eu vou te avisando por aqui ok? Escreva DUVIDA para nova pergunta.'
       );
     } else {
       await sendText(
