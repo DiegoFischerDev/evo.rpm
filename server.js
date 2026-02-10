@@ -967,7 +967,7 @@ async function handleIncomingMessage({ remoteJid, text, instanceName, profileNam
       await sendText(
         instanceName,
         remoteJid,
-        'Perfeito, podes enviar as tuas dúvidas sobre crédito habitação em Portugal e eu respondo por aqui.'
+        'Perfeito, pode me perguntar e eu encaminho para as nossas gestoras especialistas no assunto'
       );
       return;
     }
