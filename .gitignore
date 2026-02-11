@@ -1,3 +1,8 @@
+.env
+send-bulk-test.js
+
+.env
+
 node_modules/
 .env
 .env.local

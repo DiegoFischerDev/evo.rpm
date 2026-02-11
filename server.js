@@ -365,7 +365,7 @@ async function enviarResultadoSimulador(instanceName, remoteJid, valorImovel, id
     '• Seguro multirrisco (média): ' + seguroImovel.toFixed(2) + ' €\n' +
     '• Seguro de crédito (média): ' + seguroCredito.toFixed(2) + ' €\n\n' +
     '*Total primeira parcela:* ' + total.toFixed(2) + ' €\n\n' +
-    '(Valores aproximados. A prestação pode variar com a Euribor e o seguro de crédito com a idade. Para uma análise personalizada, escreve GESTORA.)';
+    '(Valores aproximados. A prestação pode variar com a Euribor e o seguro de crédito com a idade. Para uma análise personalizada, escreve GESTORA ou escreve SIMULADOR para simular outros valores.)';
   await sendText(instanceName, remoteJid, msg);
 }
 
@@ -439,79 +439,8 @@ async function handleSimuladorStep(instanceName, leadId, remoteJid, text) {
       return true;
     }
     await enviarResultadoSimulador(instanceName, remoteJid, state.valorImovel, state.age, state.anos, entrada);
-    await db.setSimuladorState(leadId, {
-      step: 'pergunta_nova_simulacao',
-      age: state.age,
-      valorImovel: state.valorImovel,
-      anos: state.anos,
-      entrada,
-    });
-    await sendText(
-      instanceName,
-      remoteJid,
-      'Queres simular com outro valor de imóvel ou com um prazo de financiamento diferente? Responde SIM ou NÃO.'
-    );
-    return true;
-  }
-
-  if (state.step === 'pergunta_nova_simulacao') {
-    const t = normalizeText(text);
-    if (t === 'nao' || t === 'não' || t === 'nao obrigado' || t === 'não obrigado' || t === 'obrigado' || t === 'obrigada') {
-      await db.clearSimuladorState(leadId);
-      await sendText(
-        instanceName,
-        remoteJid,
-        'Ok! Para continuar, escreve uma das opções:\n\nDUVIDA – dúvidas sobre crédito habitação\nSIMULADOR – nova simulação de parcela\nGESTORA – falar com a gestora e iniciar a análise\nFALAR COM RAFA – falar diretamente com a Rafa'
-      );
-      return true;
-    }
-    if (t === 'sim' || t === 'quero' || t === 'queria') {
-      await db.setSimuladorState(leadId, { step: 'nova_simulacao', age: state.age, valorImovel: state.valorImovel, anos: state.anos });
-      const maxAnos = prazoMaximoAnos(state.age);
-      await sendText(
-        instanceName,
-        remoteJid,
-        'Indica o novo valor do imóvel em euros ou o número de anos do financiamento (ex.: 20). O prazo máximo para a tua idade é ' + maxAnos + ' anos.'
-      );
-      return true;
-    }
-    await sendText(instanceName, remoteJid, 'Responde SIM para simular de novo ou NÃO para terminar.');
-    return true;
-  }
-
-  if (state.step === 'nova_simulacao') {
-    const parsed = parseAnosOuValor(text);
-    if (!parsed) {
-      await sendText(
-        instanceName,
-        remoteJid,
-        'Indica o valor do imóvel em euros ou um número de anos entre 5 e ' + prazoMaximoAnos(state.age) + ' (ex.: 200000 ou 25).'
-      );
-      return true;
-    }
-    let valorImovel = state.valorImovel;
-    let anos = state.anos;
-    if (parsed.valor != null) {
-      valorImovel = parsed.valor;
-      anos = state.anos; // mantém prazo anterior
-    } else {
-      const maxAnos = prazoMaximoAnos(state.age);
-      anos = Math.min(maxAnos, Math.max(5, parsed.anos));
-    }
-    const entrada = state.entrada != null ? Math.min(state.entrada, valorImovel - 1) : 0;
-    await enviarResultadoSimulador(instanceName, remoteJid, valorImovel, state.age, anos, entrada);
-    await db.setSimuladorState(leadId, {
-      step: 'pergunta_nova_simulacao',
-      age: state.age,
-      valorImovel,
-      anos,
-      entrada,
-    });
-    await sendText(
-      instanceName,
-      remoteJid,
-      'Queres simular com outro valor de imóvel ou com um prazo de financiamento diferente? Responde SIM ou NÃO.'
-    );
+    await db.clearSimuladorState(leadId);
+    await db.updateLeadState(leadId, { conversa: 'aguardando_escolha' });
     return true;
   }
 
