@@ -152,7 +152,13 @@ function normalizeText(text) {
 }
 
 function isTriggerPhrase(text) {
-  return normalizeText(text) === TRIGGER_PHRASE;
+  const t = normalizeText(text);
+  // 1) Primeira mensagem: qualquer frase que contenha "credito" / "crédito"
+  if (t.includes('credito') || t.includes('crdito')) return true;
+  // 2) Palavra-chave explícita "atendimento"
+  if (t.includes('atendimento')) return true;
+  // Compatibilidade com a frase antiga
+  return t === TRIGGER_PHRASE;
 }
 
 // Extrai apenas o primeiro nome
@@ -993,6 +999,27 @@ async function handleIncomingMessage({ remoteJid, text, instanceName, profileNam
   // Se o lead está no fluxo do simulador, tratar aqui
   const inSimulador = await handleSimuladorStep(instanceName, lead.id, remoteJid, text);
   if (inSimulador) return;
+
+  // Se o lead já existe e escrever "atendimento", podemos forçar o regresso ao menu inicial
+  if (isTriggerPhrase(cleanText)) {
+    await db.updateLeadState(lead.id, { conversa: 'aguardando_escolha' });
+    const agora = new Date();
+    const hora = agora.getHours();
+    let saudacaoTempo = '';
+    if (hora >= 5 && hora < 12) saudacaoTempo = 'bom dia!';
+    else if (hora >= 12 && hora < 18) saudacaoTempo = 'boa tarde!';
+    else saudacaoTempo = 'boa noite!';
+    const firstName = getFirstName(lead.nome) || getFirstName(profileName);
+    const saudacaoNome = firstName
+      ? `Oi ${firstName}, ${saudacaoTempo} tudo bem?\n`
+      : `Oi, ${saudacaoTempo} tudo bem?\n`;
+    await sendText(
+      instanceName,
+      remoteJid,
+      `${saudacaoNome}Vou te ajudar por aqui 🙂\r\n\r\nPara começar, escreve:\r\n\r\nDUVIDA - se tens dúvidas sobre crédito habitação\r\n\r\nSIMULADOR - para simular a primeira parcela do crédito\r\n\r\nGESTORA - se já queres falar com a gestora para iniciar a sua análise\r\n\r\nFALAR COM RAFA - se precisas falar diretamente com a Rafa`
+    );
+    return;
+  }
 
   // Comando SIMULADOR: inicia o fluxo em qualquer estado
   if (isCommand(text, CMD_SIMULADOR)) {
