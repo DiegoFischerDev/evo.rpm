@@ -989,7 +989,7 @@ async function handleIncomingMessage({ remoteJid, text, instanceName, profileNam
     await sendText(
       instanceName,
       remoteJid,
-      `${saudacaoNome}Vou te ajudar por aqui 🙂\r\n\r\nPara começar, escreve:\r\n\r\nDUVIDA - se tens dúvidas sobre crédito habitação\r\n\r\nSIMULADOR - para simular a primeira parcela do crédito\r\n\r\nGESTORA - se já queres falar com a gestora para iniciar a sua análise\r\n\r\nFALAR COM RAFA - se precisas falar diretamente com a Rafa`
+      `${saudacaoNome}Vou te ajudar por aqui 🙂\r\n\r\nPara começar, escreve:\r\n\r\nDUVIDA - se tens dúvidas sobre crédito habitação\r\n\r\nGESTORA - se já queres falar com a gestora para iniciar a sua análise\r\n\r\nSIMULADOR - para simular a primeira parcela do crédito\r\n\r\nFALAR COM RAFA - se precisas falar diretamente com a Rafa`
     );
     return;
   }
