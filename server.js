@@ -500,6 +500,12 @@ function isGreeting(text) {
 // Buffer de mensagens no modo dúvida até o lead enviar "?" (pergunta completa)
 const duvidaBufferByLead = new Map();
 
+/** Considera ? (U+003F) e ？ (U+FF1F fullwidth) para não bufferizar perguntas que já terminam com ? */
+function hasQuestionMark(str) {
+  if (!str || typeof str !== 'string') return false;
+  return str.includes('\u003F') || str.includes('\uFF1F');
+}
+
 function getDuvidaBufferKey(instanceName, leadId) {
   return `${instanceName || ''}:${leadId}`;
 }
@@ -672,7 +678,16 @@ async function answerWithFAQ(lead, text, instanceName) {
   try {
     // Pergunta normalizada (IA) para usar tanto no armazenamento como nos embeddings
     const normalizedQuestion = await normalizeQuestionText(text);
-    const baseQuestionText = (normalizedQuestion && normalizedQuestion.trim()) || text.trim();
+    let baseQuestionText = (normalizedQuestion && normalizedQuestion.trim()) || text.trim();
+    // Se a IA devolveu frase de erro (ex.: quando o input era só "?"), usar o texto original do lead
+    if (
+      !baseQuestionText ||
+      baseQuestionText.length < 15 ||
+      /não há uma pergunta para reformular|desculpe.*reformular/i.test(baseQuestionText)
+    ) {
+      baseQuestionText = text.trim();
+    }
+    if (!baseQuestionText) return;
 
     let perguntas = await db.getDuvidasWithEmbeddings(0);
     if (!perguntas || !perguntas.length) {
@@ -1049,13 +1064,23 @@ async function handleIncomingMessage({ remoteJid, text, instanceName, profileNam
 
     let textToAnalyze = text;
     if (lead.estado_conversa === 'com_duvida') {
-      if (!text.includes('?')) {
+      if (!hasQuestionMark(text)) {
         pushDuvidaBuffer(instanceName, lead.id, text);
         scheduleDuvidaBufferReminder(instanceName, lead.id, remoteJid);
         return;
       }
       textToAnalyze = consumeDuvidaBuffer(instanceName, lead.id, text) || text.trim();
       if (!textToAnalyze) return;
+      // Se ficou só "?" (ex.: buffer vazio noutro processo) ou texto muito curto, pedir a pergunta de novo
+      const trimmed = textToAnalyze.replace(/[\u003F\uFF1F\s]/g, '').trim();
+      if (trimmed.length < 10) {
+        await sendText(
+          instanceName,
+          remoteJid,
+          'Não recebi a tua pergunta. Escreve-a por completo numa mensagem (podes terminar com ?) e eu encaminho para as gestoras.'
+        );
+        return;
+      }
       if (isGreeting(textToAnalyze)) {
         await sendText(instanceName, remoteJid, GREETING_RESPONSE);
         return;
