@@ -135,13 +135,21 @@ function getMessageText(message) {
   return '';
 }
 
-// Frase gatilho para criar lead (pode ser ajustada por env no futuro)
-const TRIGGER_PHRASE =
-  (process.env.EVO_TRIGGER_PHRASE ||
-    'Ola, gostaria de ajuda para conseguir meu credito habitação em portugal')
-    .normalize('NFD')
-    .replace(/[\u0300-\u036f]/g, '')
-    .toLowerCase();
+// Triggers: só contam se a mensagem for exatamente uma destas (não no meio de outra frase)
+const TRIGGER_EXACT = [
+  'atendimento',
+  'ola! vim pela rafa e gostaria de comprar um imovel financiado. voce poderia me ajudar?',
+]
+  .concat(process.env.EVO_TRIGGER_PHRASE ? [process.env.EVO_TRIGGER_PHRASE] : [])
+  .map((s) =>
+    (s || '')
+      .normalize('NFD')
+      .replace(/[\u0300-\u036f]/g, '')
+      .toLowerCase()
+      .replace(/\s+/g, ' ')
+      .trim()
+  )
+  .filter(Boolean);
 
 function normalizeText(text) {
   return (text || '')
@@ -151,14 +159,19 @@ function normalizeText(text) {
     .trim();
 }
 
+/** Normaliza para comparação exata (colapsa espaços múltiplos). */
+function normalizeTextForTrigger(text) {
+  return (text || '')
+    .normalize('NFD')
+    .replace(/[\u0300-\u036f]/g, '')
+    .toLowerCase()
+    .replace(/\s+/g, ' ')
+    .trim();
+}
+
 function isTriggerPhrase(text) {
-  const t = normalizeText(text);
-  // 1) Primeira mensagem: qualquer frase que contenha "credito" / "crédito"
-  if (t.includes('credito') || t.includes('crdito')) return true;
-  // 2) Palavra-chave explícita "atendimento"
-  if (t.includes('atendimento')) return true;
-  // Compatibilidade com a frase antiga
-  return t === TRIGGER_PHRASE;
+  const t = normalizeTextForTrigger(text);
+  return TRIGGER_EXACT.some((trigger) => t === trigger);
 }
 
 // Extrai apenas o primeiro nome
@@ -929,8 +942,9 @@ async function handleIncomingMessage({ remoteJid, text, instanceName, profileNam
   const inSimulador = await handleSimuladorStep(instanceName, lead.id, remoteJid, text);
   if (inSimulador) return;
 
-  // Se o lead já existe e escrever "atendimento", podemos forçar o regresso ao menu inicial
-  if (isTriggerPhrase(cleanText)) {
+  // Se o lead já existe e escrever "atendimento" (ou frase trigger), regressar ao menu apenas se estiver em aguardando_escolha.
+  // Se estiver em com_duvida, a mensagem pode conter "crédito" (é a pergunta) — não resetar para não reenviar o menu.
+  if (lead.estado_conversa === 'aguardando_escolha' && isTriggerPhrase(cleanText)) {
     await db.updateLeadState(lead.id, { conversa: 'aguardando_escolha' });
     const agora = new Date();
     const hora = agora.getHours();
