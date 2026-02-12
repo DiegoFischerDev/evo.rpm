@@ -861,8 +861,6 @@ async function answerWithFAQ(lead, text, instanceName) {
               }
             }
           }
-          // aguardar ~5 segundos antes de enviar a mensagem de complemento
-          await new Promise((resolve) => setTimeout(resolve, 5000));
           await sendText(
             instanceName,
             lead.whatsapp_number,
