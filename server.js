@@ -1038,8 +1038,62 @@ async function handleIncomingMessage({ remoteJid, text, instanceName, profileNam
 
   const lead = existingLead;
 
-  // Em pausa: Rafa/admin está a falar com o lead; a Joana não responde
-  if (lead.estado_conversa === 'em_pausa') return;
+  // Em pausa: Rafa/admin está a falar com o lead; a Joana não responde — exceto se o lead escrever atendimento, duvida, simulador ou gestora (sai e entra no fluxo correspondente)
+  if (lead.estado_conversa === 'em_pausa') {
+    if (isTriggerPhrase(cleanText)) {
+      await db.updateLeadState(lead.id, { conversa: 'aguardando_escolha' });
+      const agora = new Date();
+      const hora = agora.getHours();
+      let saudacaoTempo = '';
+      if (hora >= 5 && hora < 12) saudacaoTempo = 'bom dia!';
+      else if (hora >= 12 && hora < 18) saudacaoTempo = 'boa tarde!';
+      else saudacaoTempo = 'boa noite!';
+      const firstName = getFirstName(lead.nome) || getFirstName(profileName);
+      const saudacaoNome = firstName
+        ? `Oi ${firstName}, ${saudacaoTempo} tudo bem?\n`
+        : `Oi, ${saudacaoTempo} tudo bem?\n`;
+      await sendText(
+        instanceName,
+        remoteJid,
+        `${saudacaoNome}Vou te ajudar por aqui 🙂\r\n\r\nPara começar, escreve:\r\n\r\nDUVIDA - se tens dúvidas sobre crédito habitação\r\n\r\nSIMULADOR - para simular a primeira parcela do crédito\r\n\r\nGESTORA - se já queres falar com a gestora para iniciar a sua análise\r\n\r\nFALAR COM RAFA - se precisas falar diretamente com a Rafa`
+      );
+      return;
+    }
+    if (isCommand(text, CMD_DUVIDA)) {
+      await db.updateLeadState(lead.id, { conversa: 'com_duvida' });
+      await sendText(
+        instanceName,
+        remoteJid,
+        'Perfeito, pode me perguntar e eu encaminho para as nossas gestoras especialistas no assunto'
+      );
+      return;
+    }
+    if (isCommand(text, CMD_SIMULADOR)) {
+      await db.setSimuladorState(lead.id, { step: 'age' });
+      const euribor = await getSimuladorEuribor();
+      const intro =
+        'Os valores que vou apresentar são calculados de forma aproximada, considerando a Euribor ' +
+        euribor.toFixed(2) + '% e um spread fixo de ' + SIMULADOR_SPREAD + '% para o cálculo da PRIMEIRA parcela. ' +
+        'Esta parcela VAI VARIAR ao longo do empréstimo.\n\nQual é a tua idade?';
+      await sendText(instanceName, remoteJid, intro);
+      return;
+    }
+    if (isCommand(text, CMD_GESTORA)) {
+      if (lead.estado_docs !== 'docs_enviados') {
+        await db.updateLeadState(lead.id, { conversa: 'com_gestora', docs: 'aguardando_docs' });
+      } else {
+        await db.updateLeadState(lead.id, { conversa: 'com_gestora' });
+      }
+      const uploadLink = `${process.env.UPLOAD_BASE_URL || 'https://ia.rafaapelomundo.com'}/upload/${lead.id}`;
+      await sendText(
+        instanceName,
+        remoteJid,
+        `Ótimo! Para começar, preciso que envies alguns documentos por este link: ${uploadLink}. Esses documentos são confidenciais e apenas a gestora terá acesso a eles.`
+      );
+      return;
+    }
+    return;
+  }
 
   // Se o lead está no fluxo do simulador, permitir sair com DUVIDA ou GESTORA em qualquer momento
   {
