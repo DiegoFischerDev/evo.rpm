@@ -1116,6 +1116,21 @@ async function handleIncomingMessage({ remoteJid, text, instanceName, profileNam
     lead.estado_docs === 'docs_enviados' ||
     (lead.estado_conversa === 'com_gestora' && lead.estado_docs === 'aguardando_docs')
   ) {
+    // DUVIDA aqui deve ser tratada como comando para iniciar uma nova pergunta,
+    // não como texto da própria pergunta.
+    if (isCommand(text, CMD_DUVIDA)) {
+      const key = getDuvidaBufferKey(instanceName, lead.id);
+      clearDuvidaBufferTimer(key);
+      duvidaBufferByLead.delete(key);
+      await db.updateLeadState(lead.id, { conversa: 'com_duvida' });
+      await sendText(
+        instanceName,
+        remoteJid,
+        'Sem problema! Podes voltar a enviar as tuas dúvidas sobre crédito habitação e eu respondo por aqui.'
+      );
+      return;
+    }
+
     if (isCommand(text, CMD_GESTORA)) {
       if (lead.estado_docs !== 'docs_enviados') {
         await db.updateLeadState(lead.id, { conversa: 'com_gestora', docs: 'aguardando_docs' });
