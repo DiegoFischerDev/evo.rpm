@@ -1033,9 +1033,40 @@ async function handleIncomingMessage({ remoteJid, text, instanceName, profileNam
 
   const lead = existingLead;
 
-  // Se o lead está no fluxo do simulador, tratar aqui
-  const inSimulador = await handleSimuladorStep(instanceName, lead.id, remoteJid, text);
-  if (inSimulador) return;
+  // Se o lead está no fluxo do simulador, permitir sair com DUVIDA ou GESTORA em qualquer momento
+  {
+    const simState = await db.getSimuladorState(lead.id);
+    if (simState) {
+      if (isCommand(text, CMD_DUVIDA)) {
+        await db.clearSimuladorState(lead.id);
+        await db.updateLeadState(lead.id, { conversa: 'com_duvida' });
+        await sendText(
+          instanceName,
+          remoteJid,
+          'Perfeito, pode me perguntar e eu encaminho para as nossas gestoras especialistas no assunto'
+        );
+        return;
+      }
+      if (isCommand(text, CMD_GESTORA)) {
+        await db.clearSimuladorState(lead.id);
+        if (lead.estado_docs !== 'docs_enviados') {
+          await db.updateLeadState(lead.id, { conversa: 'com_gestora', docs: 'aguardando_docs' });
+        } else {
+          await db.updateLeadState(lead.id, { conversa: 'com_gestora' });
+        }
+        const uploadLink = `${process.env.UPLOAD_BASE_URL || 'https://ia.rafaapelomundo.com'}/upload/${lead.id}`;
+        await sendText(
+          instanceName,
+          remoteJid,
+          `Perfeito! Para avançarmos, usa este link para enviar os documentos: ${uploadLink}. Esses documentos são confidenciais e apenas a gestora terá acesso a eles.`
+        );
+        return;
+      }
+      // Caso continue no simulador, delegar para o handler específico
+      const inSimulador = await handleSimuladorStep(instanceName, lead.id, remoteJid, text);
+      if (inSimulador) return;
+    }
+  }
 
   // Se o lead já existe e escrever "atendimento" (ou frase trigger), regressar ao menu apenas se estiver em aguardando_escolha.
   // Se estiver em com_duvida, a mensagem pode conter "crédito" (é a pergunta) — não resetar para não reenviar o menu.
