@@ -817,6 +817,7 @@ async function answerWithFAQ(lead, text, instanceName) {
         const respostasComAudio = respostas.filter(
           (r) => r && r.audio_url && String(r.audio_url).trim().length > 0
         );
+        const temAudio = respostasComAudio.length > 0;
 
         // Construir sempre uma mensagem de texto com o contexto e todas as respostas
         let msg = '📌 *Pergunta:*\n' + perguntaTexto + '\n\n';
@@ -829,27 +830,40 @@ async function answerWithFAQ(lead, text, instanceName) {
             msg +=
               '🎧 *' +
               nomeGestora +
-              ' (Gestora de crédito):* enviou uma resposta em áudio para esta dúvida. Vou enviar o áudio a seguir.\n\n';
+              ' (Gestora de crédito):* enviou uma resposta em áudio.\n\n';
           } else if (textoResposta) {
             msg += '💬 *' + nomeGestora + ' (Gestora de crédito):*\n' + textoResposta + '\n\n';
           }
         });
-        msg +=
-          '— Isto respondeu à tua dúvida? Se quiseres, podes reformular a pergunta ou escrever GESTORA para falar com a gestora.';
+
+        // Quando não há áudio, mantemos o footer junto com a mesma mensagem
+        if (!temAudio) {
+          msg +=
+            '— Isto respondeu à tua dúvida? Se quiseres, podes reformular a pergunta ou escrever GESTORA para falar com a gestora.';
+        }
 
         await sendText(instanceName, lead.whatsapp_number, msg);
 
-        // Em seguida, enviar todos os áudios (um por resposta que tenha áudio)
-        if (!baseUrl) {
-          console.warn('IA_APP_BASE_URL/IA_PUBLIC_BASE_URL não configurado – não é possível enviar áudio pelo FAQ.');
-        } else {
-          for (const r of respostasComAudio) {
-            const rawUrl = String(r.audio_url || '').trim();
-            if (!rawUrl) continue;
-            const fullAudioUrl = rawUrl.startsWith('http') ? rawUrl : baseUrl + rawUrl;
-            if (!fullAudioUrl || !fullAudioUrl.startsWith('http')) continue;
-            await sendAudio(instanceName, lead.whatsapp_number, fullAudioUrl);
+        // Se houver áudio, enviar todos os áudios e, depois de 5s, o footer em separado
+        if (temAudio) {
+          if (!baseUrl) {
+            console.warn('IA_APP_BASE_URL/IA_PUBLIC_BASE_URL não configurado – não é possível enviar áudio pelo FAQ.');
+          } else {
+            for (const r of respostasComAudio) {
+              const rawUrl = String(r.audio_url || '').trim();
+              if (!rawUrl) continue;
+              const fullAudioUrl = rawUrl.startsWith('http') ? rawUrl : baseUrl + rawUrl;
+              if (!fullAudioUrl || !fullAudioUrl.startsWith('http')) continue;
+              await sendAudio(instanceName, lead.whatsapp_number, fullAudioUrl);
+            }
           }
+          // aguardar ~5 segundos antes de enviar a mensagem de complemento
+          await new Promise((resolve) => setTimeout(resolve, 5000));
+          await sendText(
+            instanceName,
+            lead.whatsapp_number,
+            '— Isto respondeu à tua dúvida? Se quiseres, podes reformular a pergunta ou escrever GESTORA para falar com a gestora.'
+          );
         }
         return;
       }
