@@ -820,53 +820,33 @@ async function answerWithFAQ(lead, text, instanceName) {
           );
           const temAudio = respostasComAudio.length > 0;
 
-          // Construir sempre uma mensagem de texto com o contexto e todas as respostas
-          let msg = '📌 *Pergunta:*\n' + perguntaTexto + '\n\n';
-          respostas.forEach((r) => {
-            const nomeGestora = (r.gestora_nome || 'Gestora').trim() || 'Gestora';
-            const hasAudio = r && (r.audio_in_db === 1 || (r.audio_url && String(r.audio_url).trim().length > 0));
-            const textoResposta = (r.texto || '').trim();
-
-            if (hasAudio) {
-              msg +=
-                '🎧 *' +
-                nomeGestora +
-                ' (Gestora de crédito):* enviou uma resposta em áudio.\n\n';
-            } else if (textoResposta) {
-              msg += '💬 *' + nomeGestora + ' (Gestora de crédito):*\n' + textoResposta + '\n\n';
-            }
-          });
-
-          // Quando não há áudio, mantemos o footer junto com a mesma mensagem
-          if (!temAudio) {
-            msg +=
-              '— Isto respondeu à tua dúvida? Se quiseres, podes reformular a pergunta ou escrever GESTORA para falar com a gestora.';
-          }
+          const nomes = respostas.map((r) => (r.gestora_nome || 'Gestora').trim() || 'Gestora');
+          const nomeStr =
+            nomes.length === 0
+              ? 'Gestora'
+              : nomes.length === 1
+                ? nomes[0]
+                : nomes.slice(0, -1).join(', ') + ' e ' + nomes[nomes.length - 1];
+          const respondeuStr = nomes.length > 1 ? 'responderam' : 'respondeu';
+          const msg =
+            '✨\n✨ ' + nomeStr + ' ' + respondeuStr + ' sua dúvida\n\n❓ "' + (perguntaTexto || '').trim() + '"';
 
           await sendText(instanceName, lead.whatsapp_number, msg);
 
-          // Se houver áudio, enviar todos os áudios e depois o footer
-          if (temAudio) {
-            if (!baseUrl) {
-              console.warn('IA_APP_BASE_URL/IA_PUBLIC_BASE_URL não configurado – não é possível enviar áudio pelo FAQ.');
-            } else {
-              for (const r of respostasComAudio) {
-                const rawUrl = String(r.audio_url || '').trim();
-                if (!rawUrl) continue;
-                const fullAudioUrl = rawUrl.startsWith('http') ? rawUrl : baseUrl + rawUrl;
-                if (!fullAudioUrl || !fullAudioUrl.startsWith('http')) continue;
-                try {
-                  await sendAudio(instanceName, lead.whatsapp_number, fullAudioUrl);
-                } catch (err) {
-                  console.error('sendAudio (FAQ):', err.response?.data || err.message);
-                }
+          if (temAudio && baseUrl) {
+            for (const r of respostasComAudio) {
+              const rawUrl = String(r.audio_url || '').trim();
+              if (!rawUrl) continue;
+              const fullAudioUrl = rawUrl.startsWith('http') ? rawUrl : baseUrl + rawUrl;
+              if (!fullAudioUrl || !fullAudioUrl.startsWith('http')) continue;
+              try {
+                await sendAudio(instanceName, lead.whatsapp_number, fullAudioUrl);
+              } catch (err) {
+                console.error('sendAudio (FAQ):', err.response?.data || err.message);
               }
             }
-            await sendText(
-              instanceName,
-              lead.whatsapp_number,
-              '— Isto respondeu à tua dúvida? Se quiseres, podes reformular a pergunta ou escrever GESTORA para falar com a gestora.'
-            );
+          } else if (temAudio && !baseUrl) {
+            console.warn('IA_APP_BASE_URL/IA_PUBLIC_BASE_URL não configurado – não é possível enviar áudio pelo FAQ.');
           }
           return;
         }
@@ -1085,8 +1065,8 @@ async function handleIncomingMessage({ remoteJid, text, instanceName, profileNam
     const euribor = await getSimuladorEuribor();
     const intro =
       'Os valores que vou apresentar são calculados de forma aproximada, considerando a Euribor ' +
-      euribor.toFixed(2) + '% e um spread fixo de ' + SIMULADOR_SPREAD + '% para o cálculo da primeira parcela. ' +
-      'Esta parcela pode variar ao longo do empréstimo: a taxa de juro varia com a Euribor e o seguro de crédito tende a ficar mais caro com a idade, pois o risco para a seguradora aumenta.\n\nQual é a tua idade?';
+      euribor.toFixed(2) + '% e um spread fixo de ' + SIMULADOR_SPREAD + '% para o cálculo da PRIMEIRA parcela. ' +
+      'Esta parcela VAI VARIAR ao longo do empréstimo.\n\nQual é a tua idade?';
     await sendText(instanceName, remoteJid, intro);
     return;
   }
