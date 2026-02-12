@@ -482,6 +482,11 @@ function isBoaSorteMessage(text) {
   return t === 'boa sorte!' || t === 'boa sorte';
 }
 
+// Deteta "pausar" (admin) para colocar o lead em em_pausa
+function isPausarMessage(text) {
+  return normalizeText(text) === 'pausar';
+}
+
 // Saudações/perguntas genéricas: resposta pronta, não envia para gestoras
 const GREETING_RESPONSE = 'Oi! Tudo bem, obrigada! 😊 Em que posso ajudar? Se tiveres dúvidas sobre crédito habitação, escreve aqui que eu envio para as gestoras.';
 const GREETING_PATTERNS = [
@@ -1033,6 +1038,9 @@ async function handleIncomingMessage({ remoteJid, text, instanceName, profileNam
 
   const lead = existingLead;
 
+  // Em pausa: Rafa/admin está a falar com o lead; a Joana não responde
+  if (lead.estado_conversa === 'em_pausa') return;
+
   // Se o lead está no fluxo do simulador, permitir sair com DUVIDA ou GESTORA em qualquer momento
   {
     const simState = await db.getSimuladorState(lead.id);
@@ -1064,7 +1072,7 @@ async function handleIncomingMessage({ remoteJid, text, instanceName, profileNam
       }
       if (isCommand(text, CMD_FALAR_COM_RAFA)) {
         await db.clearSimuladorState(lead.id);
-        await db.updateLeadState(lead.id, { conversa: 'aguardando_escolha', querFalarComRafa: true });
+        await db.updateLeadState(lead.id, { conversa: 'em_pausa', querFalarComRafa: true });
         await sendText(
           instanceName,
           remoteJid,
@@ -1137,7 +1145,7 @@ async function handleIncomingMessage({ remoteJid, text, instanceName, profileNam
       return;
     }
     if (isCommand(text, CMD_FALAR_COM_RAFA)) {
-      await db.updateLeadState(lead.id, { conversa: 'aguardando_escolha', querFalarComRafa: true });
+      await db.updateLeadState(lead.id, { conversa: 'em_pausa', querFalarComRafa: true });
       await sendText(
         instanceName,
         remoteJid,
@@ -1189,7 +1197,7 @@ async function handleIncomingMessage({ remoteJid, text, instanceName, profileNam
       return;
     }
     if (isCommand(text, CMD_FALAR_COM_RAFA)) {
-      await db.updateLeadState(lead.id, { conversa: 'aguardando_escolha', querFalarComRafa: true });
+      await db.updateLeadState(lead.id, { conversa: 'em_pausa', querFalarComRafa: true });
       await sendText(
         instanceName,
         remoteJid,
@@ -1276,13 +1284,22 @@ async function handleIncomingMessage({ remoteJid, text, instanceName, profileNam
   }
 }
 
-// Quando a Rafa envia "boa sorte!" para o lead (mensagem fromMe), remove a flag quer_falar_com_rafa
+// Quando a Rafa envia "boa sorte!" para o lead (mensagem fromMe), remove a flag e sai de em_pausa
 async function handleOutgoingBoaSorte(remoteJid, text, instanceName) {
   if (!remoteJid || !isBoaSorteMessage(text)) return;
   const lead = await db.findLeadByWhatsapp(remoteJid);
   if (!lead || !lead.quer_falar_com_rafa) return;
-  await db.updateLeadState(lead.id, { querFalarComRafa: false });
-  console.log(`[evo] Lead ${lead.id} (${remoteJid}): "boa sorte!" → quer_falar_com_rafa = 0`);
+  await db.updateLeadState(lead.id, { conversa: 'aguardando_escolha', querFalarComRafa: false });
+  console.log(`[evo] Lead ${lead.id} (${remoteJid}): "boa sorte!" → aguardando_escolha, quer_falar_com_rafa = 0`);
+}
+
+// Quando o admin envia "pausar" para o lead (mensagem fromMe), coloca o lead em em_pausa
+async function handleOutgoingPausar(remoteJid, text, instanceName) {
+  if (!remoteJid || !isPausarMessage(text)) return;
+  const lead = await db.findLeadByWhatsapp(remoteJid);
+  if (!lead) return;
+  await db.updateLeadState(lead.id, { conversa: 'em_pausa' });
+  console.log(`[evo] Lead ${lead.id} (${remoteJid}): admin "pausar" → estado_conversa = em_pausa`);
 }
 
 // Webhook Evolution API – MESSAGES_UPSERT
@@ -1314,6 +1331,9 @@ app.post('/webhook/evolution', (req, res) => {
       handleOutgoingBoaSorte(jid, text, instanceName).catch((err) =>
         console.error('handleOutgoingBoaSorte:', err)
       );
+      handleOutgoingPausar(jid, text, instanceName).catch((err) =>
+        console.error('handleOutgoingPausar:', err)
+      );
     } else {
       handleIncomingMessage({ remoteJid: jid, text, instanceName, profileName }).catch((err) =>
         console.error('handleIncomingMessage:', err)
@@ -1328,6 +1348,9 @@ app.post('/webhook/evolution', (req, res) => {
       if (fromMe) {
         handleOutgoingBoaSorte(remoteJid, text, instanceName).catch((err) =>
           console.error('handleOutgoingBoaSorte:', err)
+        );
+        handleOutgoingPausar(remoteJid, text, instanceName).catch((err) =>
+          console.error('handleOutgoingPausar:', err)
         );
       } else {
         handleIncomingMessage({ remoteJid, text, instanceName, profileName }).catch((err) =>
