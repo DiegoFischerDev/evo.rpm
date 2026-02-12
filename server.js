@@ -1124,7 +1124,7 @@ async function handleIncomingMessage({ remoteJid, text, instanceName, profileNam
       return;
     }
     if (isCommand(text, CMD_FALAR_COM_RAFA)) {
-      await db.updateLeadState(lead.id, { conversa: 'com_rafa' });
+      await db.updateLeadState(lead.id, { conversa: 'aguardando_escolha', querFalarComRafa: true });
       await sendText(
         instanceName,
         remoteJid,
@@ -1176,7 +1176,7 @@ async function handleIncomingMessage({ remoteJid, text, instanceName, profileNam
       return;
     }
     if (isCommand(text, CMD_FALAR_COM_RAFA)) {
-      await db.updateLeadState(lead.id, { conversa: 'com_rafa' });
+      await db.updateLeadState(lead.id, { conversa: 'aguardando_escolha', querFalarComRafa: true });
       await sendText(
         instanceName,
         remoteJid,
@@ -1236,8 +1236,8 @@ async function handleIncomingMessage({ remoteJid, text, instanceName, profileNam
     return;
   }
 
-  if (lead.estado_conversa === 'com_rafa') {
-    // Resposta do lead é tratada abaixo (DUVIDA, GESTORA); "boa sorte!" é detetada em mensagens enviadas pela Rafa (fromMe) no webhook
+  if (lead.quer_falar_com_rafa) {
+    // Lead está na lista da Rafa; continua a poder usar DUVIDA/GESTORA; "boa sorte!" desativa a flag (mensagem fromMe)
     if (isCommand(text, CMD_DUVIDA)) {
       await db.updateLeadState(lead.id, { conversa: 'com_duvida' });
       await sendText(
@@ -1263,13 +1263,13 @@ async function handleIncomingMessage({ remoteJid, text, instanceName, profileNam
   }
 }
 
-// Quando a Rafa envia "boa sorte!" para o lead (mensagem fromMe), desativa modo com_rafa → aguardando_escolha
+// Quando a Rafa envia "boa sorte!" para o lead (mensagem fromMe), remove a flag quer_falar_com_rafa
 async function handleOutgoingBoaSorte(remoteJid, text, instanceName) {
   if (!remoteJid || !isBoaSorteMessage(text)) return;
   const lead = await db.findLeadByWhatsapp(remoteJid);
-  if (!lead || lead.estado_conversa !== 'com_rafa') return;
-  await db.updateLeadState(lead.id, { conversa: 'aguardando_escolha' });
-  console.log(`[evo] Lead ${lead.id} (${remoteJid}): "boa sorte!" → estado_conversa = aguardando_escolha`);
+  if (!lead || !lead.quer_falar_com_rafa) return;
+  await db.updateLeadState(lead.id, { querFalarComRafa: false });
+  console.log(`[evo] Lead ${lead.id} (${remoteJid}): "boa sorte!" → quer_falar_com_rafa = 0`);
 }
 
 // Webhook Evolution API – MESSAGES_UPSERT

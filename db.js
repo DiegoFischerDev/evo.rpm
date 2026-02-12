@@ -68,6 +68,10 @@ async function updateLeadState(id, updates, extra = {}) {
     fields.push('estado_docs = ?');
     values.push(updates.docs);
   }
+  if (updates.querFalarComRafa !== undefined) {
+    fields.push('quer_falar_com_rafa = ?');
+    values.push(updates.querFalarComRafa ? 1 : 0);
+  }
   if (extra.docs_enviados !== undefined) {
     fields.push('docs_enviados = ?');
     values.push(extra.docs_enviados);
