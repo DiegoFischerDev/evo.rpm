@@ -60,6 +60,22 @@ app.post('/api/internal/send-text', (req, res) => {
     });
 });
 
+// Envio de áudio para um número (quando a gestora responde com áudio no dashboard)
+app.post('/api/internal/send-audio', (req, res) => {
+  if (EVO_INTERNAL_SECRET && req.get('X-Internal-Secret') !== EVO_INTERNAL_SECRET) {
+    return res.status(403).json({ message: 'Forbidden' });
+  }
+  const number = (req.body && req.body.number && String(req.body.number).replace(/\D/g, '')) || '';
+  const audioUrl = (req.body && req.body.audio_url && String(req.body.audio_url).trim()) || '';
+  if (!number || !audioUrl) return res.status(400).json({ message: 'number e audio_url são obrigatórios.' });
+  sendAudio(null, number, audioUrl)
+    .then(() => res.json({ ok: true }))
+    .catch((err) => {
+      console.error('send-audio:', err.message);
+      res.status(500).json({ message: err.response?.data?.message || err.message });
+    });
+});
+
 // Atualizar embedding de uma dúvida (ch_duvidas; chamado pelo ia-app ao editar pergunta ou dúvida pendente)
 app.post('/api/internal/atualizar-embedding-duvida', async (req, res) => {
   if (EVO_INTERNAL_SECRET && req.get('X-Internal-Secret') !== EVO_INTERNAL_SECRET) {
@@ -584,6 +600,33 @@ async function sendText(instanceName, remoteJid, text) {
   );
 }
 
+// Envio de áudio (quando houver resposta em áudio no FAQ)
+async function sendAudio(instanceName, remoteJid, audioUrl) {
+  if (!EVOLUTION_URL || !EVOLUTION_API_KEY) {
+    console.warn('EVOLUTION_API_URL ou EVOLUTION_API_KEY não configuradas – áudio não enviado');
+    return;
+  }
+  const instance = instanceName || EVOLUTION_INSTANCE;
+  const number =
+    typeof remoteJid === 'string' && remoteJid.includes('@')
+      ? db.normalizeNumber(remoteJid)
+      : (remoteJid || '').replace(/\D/g, '');
+  if (!number) return;
+  const url = (audioUrl || '').trim();
+  if (!url) return;
+  await axios.post(
+    `${EVOLUTION_URL}/message/sendWhatsAppAudio/${instance}`,
+    { number, audio: url },
+    {
+      headers: {
+        'Content-Type': 'application/json',
+        apikey: EVOLUTION_API_KEY,
+      },
+      timeout: 20000,
+    }
+  );
+}
+
 // Notifica o administrador (Rafa) quando um lead pede "Falar com rafa": mensagem + link wa.me com texto pré-preenchido.
 async function notifyAdminFalarComRafa(instanceName, lead, remoteJid) {
   if (!ADMIN_WHATSAPP) return;
@@ -766,12 +809,43 @@ async function answerWithFAQ(lead, text, instanceName) {
       const { pergunta, respostas } = faqRes.data || {};
       if (pergunta && respostas && respostas.length) {
         await axios.post(`${IA_APP_BASE_URL}/api/faq/perguntas/${bestId}/incrementar-frequencia`, {}, { timeout: 5000 }).catch(() => {});
-        let msg = '📌 *Pergunta:*\n' + (pergunta.texto || '').trim() + '\n\n';
+
+        const perguntaTexto = (pergunta.texto || '').trim();
+        const baseUrl = (process.env.IA_APP_BASE_URL || process.env.IA_PUBLIC_BASE_URL || '').replace(/\/$/, '');
+
+        const respostasComAudio = respostas.filter(
+          (r) => r && r.audio_url && String(r.audio_url).trim().length > 0
+        );
+
+        // Construir sempre uma mensagem de texto com o contexto e todas as respostas
+        let msg = '📌 *Pergunta:*\n' + perguntaTexto + '\n\n';
         respostas.forEach((r) => {
-          msg += '💬 *' + (r.gestora_nome || 'Gestora') + ' (Gestora de crédito):*\n' + (r.texto || '').trim() + '\n\n';
+          const nomeGestora = (r.gestora_nome || 'Gestora').trim() || 'Gestora';
+          const hasAudio = r && r.audio_url && String(r.audio_url).trim().length > 0;
+          const textoResposta = (r.texto || '').trim();
+
+          if (hasAudio) {
+            msg +=
+              '🎧 *' +
+              nomeGestora +
+              ' (Gestora de crédito):* enviou uma resposta em áudio para esta dúvida. Vou enviar o áudio a seguir.\n\n';
+          } else if (textoResposta) {
+            msg += '💬 *' + nomeGestora + ' (Gestora de crédito):*\n' + textoResposta + '\n\n';
+          }
         });
-        msg += '— Isto respondeu à tua dúvida? Se quiseres, podes reformular a pergunta.';
+        msg +=
+          '— Isto respondeu à tua dúvida? Se quiseres, podes reformular a pergunta ou escrever GESTORA para falar com a gestora.';
+
         await sendText(instanceName, lead.whatsapp_number, msg);
+
+        // Em seguida, enviar todos os áudios (um por resposta que tenha áudio)
+        for (const r of respostasComAudio) {
+          const rawUrl = String(r.audio_url || '').trim();
+          if (!rawUrl) continue;
+          const fullAudioUrl = rawUrl.startsWith('http') ? rawUrl : baseUrl ? baseUrl + rawUrl : rawUrl;
+          if (!fullAudioUrl) continue;
+          await sendAudio(instanceName, lead.whatsapp_number, fullAudioUrl);
+        }
         return;
       }
     }
