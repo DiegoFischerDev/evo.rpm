@@ -811,7 +811,8 @@ async function answerWithFAQ(lead, text, instanceName) {
         await axios.post(`${IA_APP_BASE_URL}/api/faq/perguntas/${bestId}/incrementar-frequencia`, {}, { timeout: 5000 }).catch(() => {});
 
         const perguntaTexto = (pergunta.texto || '').trim();
-        const baseUrl = (process.env.IA_APP_BASE_URL || process.env.IA_PUBLIC_BASE_URL || '').replace(/\/$/, '');
+        const baseUrlRaw = (process.env.IA_APP_BASE_URL || process.env.IA_PUBLIC_BASE_URL || '').trim();
+        const baseUrl = baseUrlRaw ? baseUrlRaw.replace(/\/$/, '') : '';
 
         const respostasComAudio = respostas.filter(
           (r) => r && r.audio_url && String(r.audio_url).trim().length > 0
@@ -839,12 +840,16 @@ async function answerWithFAQ(lead, text, instanceName) {
         await sendText(instanceName, lead.whatsapp_number, msg);
 
         // Em seguida, enviar todos os áudios (um por resposta que tenha áudio)
-        for (const r of respostasComAudio) {
-          const rawUrl = String(r.audio_url || '').trim();
-          if (!rawUrl) continue;
-          const fullAudioUrl = rawUrl.startsWith('http') ? rawUrl : baseUrl ? baseUrl + rawUrl : rawUrl;
-          if (!fullAudioUrl) continue;
-          await sendAudio(instanceName, lead.whatsapp_number, fullAudioUrl);
+        if (!baseUrl) {
+          console.warn('IA_APP_BASE_URL/IA_PUBLIC_BASE_URL não configurado – não é possível enviar áudio pelo FAQ.');
+        } else {
+          for (const r of respostasComAudio) {
+            const rawUrl = String(r.audio_url || '').trim();
+            if (!rawUrl) continue;
+            const fullAudioUrl = rawUrl.startsWith('http') ? rawUrl : baseUrl + rawUrl;
+            if (!fullAudioUrl || !fullAudioUrl.startsWith('http')) continue;
+            await sendAudio(instanceName, lead.whatsapp_number, fullAudioUrl);
+          }
         }
         return;
       }
