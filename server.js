@@ -854,7 +854,11 @@ async function answerWithFAQ(lead, text, instanceName) {
               if (!rawUrl) continue;
               const fullAudioUrl = rawUrl.startsWith('http') ? rawUrl : baseUrl + rawUrl;
               if (!fullAudioUrl || !fullAudioUrl.startsWith('http')) continue;
-              await sendAudio(instanceName, lead.whatsapp_number, fullAudioUrl);
+              try {
+                await sendAudio(instanceName, lead.whatsapp_number, fullAudioUrl);
+              } catch (err) {
+                console.error('sendAudio (FAQ):', err.response?.data || err.message);
+              }
             }
           }
           // aguardar ~5 segundos antes de enviar a mensagem de complemento
