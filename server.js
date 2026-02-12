@@ -1062,6 +1062,19 @@ async function handleIncomingMessage({ remoteJid, text, instanceName, profileNam
         );
         return;
       }
+      if (isCommand(text, CMD_FALAR_COM_RAFA)) {
+        await db.clearSimuladorState(lead.id);
+        await db.updateLeadState(lead.id, { conversa: 'aguardando_escolha', querFalarComRafa: true });
+        await sendText(
+          instanceName,
+          remoteJid,
+          'Claro! Vou avisar a Rafa para falar contigo pessoalmente 😊\nEla vai mandar mensagem por aqui no WhatsApp assim que puder.'
+        );
+        notifyAdminFalarComRafa(instanceName, lead, remoteJid).catch((err) =>
+          console.error('notifyAdminFalarComRafa:', err.message)
+        );
+        return;
+      }
       // Caso continue no simulador, delegar para o handler específico
       const inSimulador = await handleSimuladorStep(instanceName, lead.id, remoteJid, text);
       if (inSimulador) return;
@@ -1102,7 +1115,7 @@ async function handleIncomingMessage({ remoteJid, text, instanceName, profileNam
     return;
   }
 
-  // Estados: estado_conversa (aguardando_escolha | com_duvida | com_gestora | com_rafa) + estado_docs (aguardando_docs | sem_docs | docs_enviados)
+  // Estados: estado_conversa (aguardando_escolha | com_duvida | com_gestora); quer_falar_com_rafa é flag separada
   if (lead.estado_conversa === 'aguardando_escolha') {
     if (isCommand(text, CMD_DUVIDA)) {
       await db.updateLeadState(lead.id, { conversa: 'com_duvida' });
