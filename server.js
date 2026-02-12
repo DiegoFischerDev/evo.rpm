@@ -805,69 +805,74 @@ async function answerWithFAQ(lead, text, instanceName) {
     }
 
     if (bestId != null && bestScore >= FAQ_MATCH_THRESHOLD) {
-      const faqRes = await axios.get(`${IA_APP_BASE_URL}/api/faq/perguntas/${bestId}`, { timeout: 10000 });
-      const { pergunta, respostas } = faqRes.data || {};
-      if (pergunta && respostas && respostas.length) {
-        await axios.post(`${IA_APP_BASE_URL}/api/faq/perguntas/${bestId}/incrementar-frequencia`, {}, { timeout: 5000 }).catch(() => {});
+      try {
+        const faqRes = await axios.get(`${IA_APP_BASE_URL}/api/faq/perguntas/${bestId}`, { timeout: 10000 });
+        const { pergunta, respostas } = faqRes.data || {};
+        if (pergunta && respostas && respostas.length) {
+          await axios.post(`${IA_APP_BASE_URL}/api/faq/perguntas/${bestId}/incrementar-frequencia`, {}, { timeout: 5000 }).catch(() => {});
 
-        const perguntaTexto = (pergunta.texto || '').trim();
-        const baseUrlRaw = (process.env.IA_APP_BASE_URL || process.env.IA_PUBLIC_BASE_URL || '').trim();
-        const baseUrl = baseUrlRaw ? baseUrlRaw.replace(/\/$/, '') : '';
+          const perguntaTexto = (pergunta.texto || '').trim();
+          const baseUrlRaw = (process.env.IA_APP_BASE_URL || process.env.IA_PUBLIC_BASE_URL || '').trim();
+          const baseUrl = baseUrlRaw ? baseUrlRaw.replace(/\/$/, '') : '';
 
-        const respostasComAudio = respostas.filter(
-          (r) => r && r.audio_url && String(r.audio_url).trim().length > 0
-        );
-        const temAudio = respostasComAudio.length > 0;
+          const respostasComAudio = respostas.filter(
+            (r) => r && (r.audio_in_db === 1 || (r.audio_url && String(r.audio_url).trim().length > 0))
+          );
+          const temAudio = respostasComAudio.length > 0;
 
-        // Construir sempre uma mensagem de texto com o contexto e todas as respostas
-        let msg = '📌 *Pergunta:*\n' + perguntaTexto + '\n\n';
-        respostas.forEach((r) => {
-          const nomeGestora = (r.gestora_nome || 'Gestora').trim() || 'Gestora';
-          const hasAudio = r && r.audio_url && String(r.audio_url).trim().length > 0;
-          const textoResposta = (r.texto || '').trim();
+          // Construir sempre uma mensagem de texto com o contexto e todas as respostas
+          let msg = '📌 *Pergunta:*\n' + perguntaTexto + '\n\n';
+          respostas.forEach((r) => {
+            const nomeGestora = (r.gestora_nome || 'Gestora').trim() || 'Gestora';
+            const hasAudio = r && (r.audio_in_db === 1 || (r.audio_url && String(r.audio_url).trim().length > 0));
+            const textoResposta = (r.texto || '').trim();
 
-          if (hasAudio) {
+            if (hasAudio) {
+              msg +=
+                '🎧 *' +
+                nomeGestora +
+                ' (Gestora de crédito):* enviou uma resposta em áudio.\n\n';
+            } else if (textoResposta) {
+              msg += '💬 *' + nomeGestora + ' (Gestora de crédito):*\n' + textoResposta + '\n\n';
+            }
+          });
+
+          // Quando não há áudio, mantemos o footer junto com a mesma mensagem
+          if (!temAudio) {
             msg +=
-              '🎧 *' +
-              nomeGestora +
-              ' (Gestora de crédito):* enviou uma resposta em áudio.\n\n';
-          } else if (textoResposta) {
-            msg += '💬 *' + nomeGestora + ' (Gestora de crédito):*\n' + textoResposta + '\n\n';
+              '— Isto respondeu à tua dúvida? Se quiseres, podes reformular a pergunta ou escrever GESTORA para falar com a gestora.';
           }
-        });
 
-        // Quando não há áudio, mantemos o footer junto com a mesma mensagem
-        if (!temAudio) {
-          msg +=
-            '— Isto respondeu à tua dúvida? Se quiseres, podes reformular a pergunta ou escrever GESTORA para falar com a gestora.';
-        }
+          await sendText(instanceName, lead.whatsapp_number, msg);
 
-        await sendText(instanceName, lead.whatsapp_number, msg);
-
-        // Se houver áudio, enviar todos os áudios e, depois de 5s, o footer em separado
-        if (temAudio) {
-          if (!baseUrl) {
-            console.warn('IA_APP_BASE_URL/IA_PUBLIC_BASE_URL não configurado – não é possível enviar áudio pelo FAQ.');
-          } else {
-            for (const r of respostasComAudio) {
-              const rawUrl = String(r.audio_url || '').trim();
-              if (!rawUrl) continue;
-              const fullAudioUrl = rawUrl.startsWith('http') ? rawUrl : baseUrl + rawUrl;
-              if (!fullAudioUrl || !fullAudioUrl.startsWith('http')) continue;
-              try {
-                await sendAudio(instanceName, lead.whatsapp_number, fullAudioUrl);
-              } catch (err) {
-                console.error('sendAudio (FAQ):', err.response?.data || err.message);
+          // Se houver áudio, enviar todos os áudios e depois o footer
+          if (temAudio) {
+            if (!baseUrl) {
+              console.warn('IA_APP_BASE_URL/IA_PUBLIC_BASE_URL não configurado – não é possível enviar áudio pelo FAQ.');
+            } else {
+              for (const r of respostasComAudio) {
+                const rawUrl = String(r.audio_url || '').trim();
+                if (!rawUrl) continue;
+                const fullAudioUrl = rawUrl.startsWith('http') ? rawUrl : baseUrl + rawUrl;
+                if (!fullAudioUrl || !fullAudioUrl.startsWith('http')) continue;
+                try {
+                  await sendAudio(instanceName, lead.whatsapp_number, fullAudioUrl);
+                } catch (err) {
+                  console.error('sendAudio (FAQ):', err.response?.data || err.message);
+                }
               }
             }
+            await sendText(
+              instanceName,
+              lead.whatsapp_number,
+              '— Isto respondeu à tua dúvida? Se quiseres, podes reformular a pergunta ou escrever GESTORA para falar com a gestora.'
+            );
           }
-          await sendText(
-            instanceName,
-            lead.whatsapp_number,
-            '— Isto respondeu à tua dúvida? Se quiseres, podes reformular a pergunta ou escrever GESTORA para falar com a gestora.'
-          );
+          return;
         }
-        return;
+      } catch (faqErr) {
+        // Falha ao obter FAQ do ia-app (rede, 404, 500): tratar como "sem resposta" e registar como nova dúvida
+        console.error('FAQ fetch (ia-app):', faqErr.response?.data || faqErr.message);
       }
     }
 
