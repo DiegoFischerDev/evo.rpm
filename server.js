@@ -637,54 +637,65 @@ async function sendText(instanceName, remoteJid, text, options) {
 
 /**
  * Fluxo de boas-vindas com mensagens atrasadas (trigger: "Ola, gostaria de ajuda para conseguir meu credito habitação em portugal").
+ * Passos são guardados na fila ch_boas_vindas_queue e processados por um job a cada 12s, para sobreviver a reinícios do processo.
  * 1) 30s: oi (nome)
- * 2) +10s: Tudo bem? 😊
+ * 2) +10s: Tudo bem? 😊 + presence "recording"
  * 3) +140s: áudio de boas vindas (ia-app)
  * 4) +40s: texto final com "atendimento" e boa sorte
  */
-function runBoasVindasFlow(instanceName, remoteJid, firstName) {
+async function runBoasVindasFlow(instanceName, remoteJid, firstName) {
   const nome = (firstName || '').trim();
   const msg1 = nome ? `oi ${nome}` : 'oieee';
   const msg2 = 'Tudo bem? 😊';
   const msg4 =
     'Criamos uma automação para ajudar no seu atendimento. Para iniciar, basta escrever "atendimento". E qualquer coisa que precisar me chama 🤗 boa sorte!🍀';
 
-  const boasVindasOpt = { skipJoanaPrefix: true };
+  try {
+    await db.insertBoasVindasSteps(instanceName, remoteJid, msg1, msg2, msg4);
+    writeLog(`boas-vindas flow started for ${remoteJid} (${nome}) – steps queued`);
+  } catch (err) {
+    writeLog(`boas-vindas queue insert failed: ${err.message}`);
+  }
+}
 
-  setTimeout(() => {
-    sendText(instanceName, remoteJid, msg1, boasVindasOpt).catch((err) =>
-      console.error('[evo] boas-vindas msg1:', err?.response?.data || err.message)
-    );
-  }, 30 * 1000);
+const boasVindasOpt = { skipJoanaPrefix: true };
 
-  setTimeout(() => {
-    sendText(instanceName, remoteJid, msg2, boasVindasOpt).catch((err) =>
-      console.error('[evo] boas-vindas msg2:', err?.response?.data || err.message)
-    );
-    // Mostrar "a gravar áudio..." no WhatsApp durante os 140s até ao envio do áudio
-    sendPresence(instanceName, remoteJid, 'recording', 140 * 1000).catch((err) =>
-      console.error('[evo] boas-vindas presence recording:', err?.response?.data || err.message)
-    );
-  }, (30 + 10) * 1000);
-
-  setTimeout(() => {
-    if (!IA_APP_BASE_URL || !EVO_INTERNAL_SECRET) {
-      console.warn('[evo] boas-vindas: IA_APP_BASE_URL ou EVO_INTERNAL_SECRET em falta – áudio não enviado');
-      return;
+async function processBoasVindasQueue() {
+  let rows;
+  try {
+    rows = await db.getDueBoasVindasSteps();
+  } catch (err) {
+    writeLog(`boas-vindas getDue failed: ${err.message}`);
+    return;
+  }
+  for (const row of rows || []) {
+    const { id, instance_name, remote_jid, step, payload } = row;
+    try {
+      if (step === 1 || step === 2 || step === 4) {
+        const text = payload || '';
+        await sendText(instance_name, remote_jid, text, boasVindasOpt);
+        writeLog(`boas-vindas step ${step} sent to ${remote_jid}`);
+        if (step === 2) {
+          sendPresence(instance_name, remote_jid, 'recording', 140 * 1000).catch(() => {});
+        }
+      } else if (step === 3) {
+        if (IA_APP_BASE_URL && EVO_INTERNAL_SECRET) {
+          const audioUrl = `${IA_APP_BASE_URL}/api/internal/audios-rafa/boas_vindas?token=${encodeURIComponent(EVO_INTERNAL_SECRET)}`;
+          await sendAudio(instance_name, remote_jid, audioUrl);
+          writeLog(`boas-vindas step 3 (audio) sent to ${remote_jid}`);
+        } else {
+          writeLog(`boas-vindas step 3 skipped: IA_APP_BASE_URL or EVO_INTERNAL_SECRET missing`);
+        }
+      }
+    } catch (err) {
+      writeLog(`boas-vindas step ${step} error: ${err?.response?.data ? JSON.stringify(err.response.data) : err.message}`);
     }
-    const audioUrl = `${IA_APP_BASE_URL}/api/internal/audios-rafa/boas_vindas?token=${encodeURIComponent(EVO_INTERNAL_SECRET)}`;
-    sendAudio(instanceName, remoteJid, audioUrl).catch((err) =>
-      console.error('[evo] boas-vindas áudio:', err?.response?.data || err.message)
-    );
-  }, (30 + 10 + 140) * 1000);
-
-  setTimeout(() => {
-    sendText(instanceName, remoteJid, msg4, boasVindasOpt).catch((err) =>
-      console.error('[evo] boas-vindas msg4:', err?.response?.data || err.message)
-    );
-  }, (30 + 10 + 140 + 40) * 1000);
-
-  writeLog(`boas-vindas flow started for ${remoteJid} (${nome})`);
+    try {
+      await db.deleteBoasVindasStep(id);
+    } catch (e) {
+      writeLog(`boas-vindas delete step ${id} failed: ${e.message}`);
+    }
+  }
 }
 
 // Envio de presence (composing = "a escrever...", recording = "a gravar áudio...")
@@ -1572,4 +1583,5 @@ app.get('/', (req, res) => {
 
 app.listen(PORT, '0.0.0.0', () => {
   console.log(`Evo ouvindo na porta ${PORT}`);
+  setInterval(processBoasVindasQueue, 12 * 1000);
 });

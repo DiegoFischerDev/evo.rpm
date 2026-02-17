@@ -147,6 +147,29 @@ async function clearSimuladorState(leadId) {
   );
 }
 
+// ---------- Fila boas-vindas (mensagens atrasadas que sobrevivem a reinício) ----------
+async function insertBoasVindasSteps(instanceName, remoteJid, msg1, msg2, msg4) {
+  await query(
+    `INSERT INTO ch_boas_vindas_queue (instance_name, remote_jid, step, execute_at, payload) VALUES
+     (?, ?, 1, DATE_ADD(NOW(), INTERVAL 30 SECOND), ?),
+     (?, ?, 2, DATE_ADD(NOW(), INTERVAL 40 SECOND), ?),
+     (?, ?, 3, DATE_ADD(NOW(), INTERVAL 180 SECOND), ?),
+     (?, ?, 4, DATE_ADD(NOW(), INTERVAL 220 SECOND), ?)`,
+    [instanceName, remoteJid, msg1, instanceName, remoteJid, msg2, instanceName, remoteJid, 'audio', instanceName, remoteJid, msg4]
+  );
+}
+
+async function getDueBoasVindasSteps() {
+  const rows = await query(
+    'SELECT id, instance_name, remote_jid, step, payload FROM ch_boas_vindas_queue WHERE execute_at <= NOW() ORDER BY execute_at ASC LIMIT 20'
+  );
+  return rows || [];
+}
+
+async function deleteBoasVindasStep(id) {
+  await query('DELETE FROM ch_boas_vindas_queue WHERE id = ?', [id]);
+}
+
 module.exports = {
   getPool,
   query,
@@ -159,5 +182,8 @@ module.exports = {
   getSimuladorState,
   setSimuladorState,
   clearSimuladorState,
+  insertBoasVindasSteps,
+  getDueBoasVindasSteps,
+  deleteBoasVindasStep,
 };
 
