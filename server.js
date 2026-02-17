@@ -211,6 +211,14 @@ function isTriggerPhrase(text) {
   return TRIGGER_EXACT.some((trigger) => t === trigger);
 }
 
+// Frase que inicia o fluxo de boas-vindas com mensagens atrasadas (oi → Tudo bem? → áudio → texto final)
+const BOAS_VINDAS_FLOW_TRIGGER = normalizeTextForTrigger(
+  'Ola, gostaria de ajuda para conseguir meu credito habitação em portugal'
+);
+function isBoasVindasFlowTrigger(text) {
+  return normalizeTextForTrigger(text) === BOAS_VINDAS_FLOW_TRIGGER;
+}
+
 // Extrai apenas o primeiro nome
 function getFirstName(fullName) {
   if (!fullName) return null;
@@ -624,6 +632,52 @@ async function sendText(instanceName, remoteJid, text) {
       timeout: 15000,
     }
   );
+}
+
+/**
+ * Fluxo de boas-vindas com mensagens atrasadas (trigger: "Ola, gostaria de ajuda para conseguir meu credito habitação em portugal").
+ * 1) 30s: oi (nome)
+ * 2) +10s: Tudo bem? 😊
+ * 3) +140s: áudio de boas vindas (ia-app)
+ * 4) +40s: texto final com "atendimento" e boa sorte
+ */
+function runBoasVindasFlow(instanceName, remoteJid, firstName) {
+  const nome = (firstName || '').trim();
+  const msg1 = nome ? `oi ${nome}` : 'oieee';
+  const msg2 = 'Tudo bem? 😊';
+  const msg4 =
+    'Criamos uma automação para ajudar no seu atendimento. Para iniciar, basta escrever "atendimento". E qualquer coisa que precisar me chama 🤗 boa sorte!🍀';
+
+  setTimeout(() => {
+    sendText(instanceName, remoteJid, msg1).catch((err) =>
+      console.error('[evo] boas-vindas msg1:', err?.response?.data || err.message)
+    );
+  }, 30 * 1000);
+
+  setTimeout(() => {
+    sendText(instanceName, remoteJid, msg2).catch((err) =>
+      console.error('[evo] boas-vindas msg2:', err?.response?.data || err.message)
+    );
+  }, (30 + 10) * 1000);
+
+  setTimeout(() => {
+    if (!IA_APP_BASE_URL || !EVO_INTERNAL_SECRET) {
+      console.warn('[evo] boas-vindas: IA_APP_BASE_URL ou EVO_INTERNAL_SECRET em falta – áudio não enviado');
+      return;
+    }
+    const audioUrl = `${IA_APP_BASE_URL}/api/internal/audios-rafa/boas_vindas?token=${encodeURIComponent(EVO_INTERNAL_SECRET)}`;
+    sendAudio(instanceName, remoteJid, audioUrl).catch((err) =>
+      console.error('[evo] boas-vindas áudio:', err?.response?.data || err.message)
+    );
+  }, (30 + 10 + 140) * 1000);
+
+  setTimeout(() => {
+    sendText(instanceName, remoteJid, msg4).catch((err) =>
+      console.error('[evo] boas-vindas msg4:', err?.response?.data || err.message)
+    );
+  }, (30 + 10 + 140 + 40) * 1000);
+
+  writeLog(`boas-vindas flow started for ${remoteJid} (${nome})`);
 }
 
 // Envio de áudio (quando houver resposta em áudio no FAQ)
@@ -1053,6 +1107,16 @@ async function handleIncomingMessage({ remoteJid, text, instanceName, profileNam
 
   // Lead ainda não existe
   if (!existingLead) {
+    if (isBoasVindasFlowTrigger(cleanText)) {
+      const firstName = getFirstName(profileName);
+      const lead = await db.createLead({
+        remoteJid,
+        nome: firstName,
+        origemInstancia: instanceName,
+      });
+      runBoasVindasFlow(instanceName, remoteJid, firstName || lead.nome);
+      return;
+    }
     if (!isTriggerPhrase(cleanText)) return;
 
     const firstName = getFirstName(profileName);
