@@ -1,6 +1,6 @@
 {
   "name": "evo",
-  "version": "1.0.0",
+  "version": "2.0.0",
   "private": true,
   "description": "Evolution API + OpenAI – webhook WhatsApp → IA → resposta",
   "main": "server.js",
