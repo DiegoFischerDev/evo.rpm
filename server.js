@@ -687,7 +687,8 @@ function runBoasVindasFlow(instanceName, remoteJid, firstName) {
   writeLog(`boas-vindas flow started for ${remoteJid} (${nome})`);
 }
 
-// Envio de presence (composing = "a escrever...", recording = "a gravar áudio...") – Evolution API Chat Controller
+// Envio de presence (composing = "a escrever...", recording = "a gravar áudio...")
+// Depende da Evolution API: pode ser /chat/sendPresence ou não existir na tua versão.
 async function sendPresence(instanceName, remoteJid, presence, delayMs) {
   if (!EVOLUTION_URL || !EVOLUTION_API_KEY) return;
   const instance = instanceName || EVOLUTION_INSTANCE;
@@ -697,28 +698,32 @@ async function sendPresence(instanceName, remoteJid, presence, delayMs) {
       : (remoteJid || '').replace(/\D/g, '');
   if (!number || !presence) return;
   const delay = Math.max(0, Math.min(Number(delayMs) || 60000, 180000)); // 0–180s
-  try {
-    await axios.post(
-      `${EVOLUTION_URL}/chat/sendPresence/${instance}`,
-      {
-        number,
-        options: {
-          number,
-          presence: presence === 'recording' ? 'recording' : 'composing',
-          delay,
-        },
-      },
-      {
-        headers: {
-          'Content-Type': 'application/json',
-          apikey: EVOLUTION_API_KEY,
-        },
+  const presenceType = presence === 'recording' ? 'recording' : 'composing';
+
+  const endpoints = [
+    { path: `${EVOLUTION_URL}/chat/sendPresence/${instance}`, body: { number, options: { number, presence: presenceType, delay } } },
+    { path: `${EVOLUTION_URL}/chat/sendPresence/${instance}`, body: { number, presence: presenceType, delay } },
+    { path: `${EVOLUTION_URL}/message/sendPresence/${instance}`, body: { number, presence: presenceType, delay } },
+  ];
+
+  for (const { path, body } of endpoints) {
+    try {
+      const res = await axios.post(path, body, {
+        headers: { 'Content-Type': 'application/json', apikey: EVOLUTION_API_KEY },
         timeout: 10000,
+      });
+      if (res.status >= 200 && res.status < 300) {
+        writeLog(`sendPresence ok -> ${number} ${presenceType}`);
+        return;
       }
-    );
-  } catch (err) {
-    console.error('[evo] sendPresence:', err?.response?.data || err.message);
+    } catch (err) {
+      const status = err.response?.status;
+      const data = err.response?.data;
+      writeLog(`sendPresence try ${path} -> ${status || ''} ${data ? JSON.stringify(data) : err.message}`);
+      continue;
+    }
   }
+  writeLog(`sendPresence failed for ${number} (tried ${endpoints.length} variants). A tua Evolution API pode não suportar este endpoint.`);
 }
 
 // Envio de áudio (quando houver resposta em áudio no FAQ)
