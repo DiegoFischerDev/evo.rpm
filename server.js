@@ -1,6 +1,27 @@
 const path = require('path');
 const fs = require('fs');
 
+// Logger simples para ficheiro em hospedagem partilhada
+const LOG_DIR = path.join(__dirname, 'logs');
+if (!fs.existsSync(LOG_DIR)) {
+  try {
+    fs.mkdirSync(LOG_DIR, { recursive: true });
+  } catch (e) {
+    console.error('Não consegui criar pasta de logs:', e.message);
+  }
+}
+function writeLog(line) {
+  try {
+    const msg = `[${new Date().toISOString()}] ${line}\n`;
+    const file = path.join(LOG_DIR, 'app.log');
+    fs.appendFile(file, msg, (err) => {
+      if (err) console.error('Erro ao escrever no log:', err.message);
+    });
+  } catch (err) {
+    console.error('writeLog falhou:', err.message);
+  }
+}
+
 // Carrega .env: primeiro na pasta do server, depois na pasta pai (sobrevive ao deploy na Hostinger)
 const envPathLocal = path.join(__dirname, '.env');
 const envPathParent = path.join(__dirname, '..', '.env');
@@ -703,18 +724,28 @@ async function normalizeQuestionText(rawText) {
     return rawText;
   } catch (err) {
     console.error('normalizeQuestionText error:', err.message);
+    writeLog('normalizeQuestionText error: ' + (err.response?.data ? JSON.stringify(err.response.data) : err.message));
     return rawText;
   }
 }
 
 async function getEmbedding(text) {
   if (!openai || !text || !text.trim()) return null;
-  const res = await openai.embeddings.create({
-    model: EMBEDDING_MODEL,
-    input: text.trim().slice(0, 8000),
-  });
-  const arr = res.data && res.data[0] && res.data[0].embedding;
-  return Array.isArray(arr) ? arr : null;
+  try {
+    const res = await openai.embeddings.create({
+      model: EMBEDDING_MODEL,
+      input: text.trim().slice(0, 8000),
+    });
+    const arr = res.data && res.data[0] && res.data[0].embedding;
+    return Array.isArray(arr) ? arr : null;
+  } catch (err) {
+    console.error('getEmbedding error:', err.response?.data || err.message || err);
+    writeLog(
+      'getEmbedding error: ' +
+        (err.response?.data ? JSON.stringify(err.response.data) : err.message || String(err))
+    );
+    return null;
+  }
 }
 
 // FAQ: busca por vetores e responde com respostas das gestoras
@@ -943,6 +974,10 @@ async function answerWithFAQ(lead, text, instanceName) {
     }
   } catch (err) {
     console.error('answerWithFAQ:', err.response?.data || err.message);
+    writeLog(
+      'answerWithFAQ error: ' +
+        (err.response?.data ? JSON.stringify(err.response.data) : err.message || String(err))
+    );
     await sendText(
       instanceName,
       lead.whatsapp_number,
