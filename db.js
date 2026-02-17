@@ -151,10 +151,10 @@ async function clearSimuladorState(leadId) {
 async function insertBoasVindasSteps(instanceName, remoteJid, msg1, msg2, msg4) {
   await query(
     `INSERT INTO ch_boas_vindas_queue (instance_name, remote_jid, step, execute_at, payload) VALUES
-     (?, ?, 1, DATE_ADD(NOW(), INTERVAL 30 SECOND), ?),
-     (?, ?, 2, DATE_ADD(NOW(), INTERVAL 40 SECOND), ?),
-     (?, ?, 3, DATE_ADD(NOW(), INTERVAL 180 SECOND), ?),
-     (?, ?, 4, DATE_ADD(NOW(), INTERVAL 220 SECOND), ?)`,
+     (?, ?, 1, DATE_ADD(NOW(), INTERVAL 15 SECOND), ?),
+     (?, ?, 2, DATE_ADD(NOW(), INTERVAL 20 SECOND), ?),
+     (?, ?, 3, DATE_ADD(NOW(), INTERVAL 90 SECOND), ?),
+     (?, ?, 4, DATE_ADD(NOW(), INTERVAL 110 SECOND), ?)`,
     [instanceName, remoteJid, msg1, instanceName, remoteJid, msg2, instanceName, remoteJid, 'audio', instanceName, remoteJid, msg4]
   );
 }

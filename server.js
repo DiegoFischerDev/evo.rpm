@@ -638,10 +638,10 @@ async function sendText(instanceName, remoteJid, text, options) {
 /**
  * Fluxo de boas-vindas com mensagens atrasadas (trigger: "Ola, gostaria de ajuda para conseguir meu credito habitação em portugal").
  * Passos são guardados na fila ch_boas_vindas_queue e processados por um job a cada 12s, para sobreviver a reinícios do processo.
- * 1) 30s: oi (nome)
- * 2) +10s: Tudo bem? 😊 + presence "recording"
- * 3) +140s: áudio de boas vindas (ia-app)
- * 4) +40s: texto final com "atendimento" e boa sorte
+ * 1) 15s: oi (nome)
+ * 2) +5s: Tudo bem? 😊 + presence "recording"
+ * 3) +70s: áudio de boas vindas (ia-app)
+ * 4) +20s: texto final com "atendimento" e boa sorte
  */
 async function runBoasVindasFlow(instanceName, remoteJid, firstName) {
   const nome = (firstName || '').trim();
@@ -676,7 +676,7 @@ async function processBoasVindasQueue() {
         await sendText(instance_name, remote_jid, text, boasVindasOpt);
         writeLog(`boas-vindas step ${step} sent to ${remote_jid}`);
         if (step === 2) {
-          sendPresence(instance_name, remote_jid, 'recording', 140 * 1000).catch(() => {});
+          sendPresence(instance_name, remote_jid, 'recording', 70 * 1000).catch(() => {});
         }
       } else if (step === 3) {
         if (IA_APP_BASE_URL && EVO_INTERNAL_SECRET) {
@@ -1166,6 +1166,7 @@ async function handleIncomingMessage({ remoteJid, text, instanceName, profileNam
         nome: firstName,
         origemInstancia: instanceName,
       });
+      await db.updateLeadState(lead.id, { conversa: 'em_pausa' });
       runBoasVindasFlow(instanceName, remoteJid, firstName || lead.nome);
       return;
     }
