@@ -985,7 +985,7 @@ async function answerWithFAQ(lead, text, instanceName) {
   } catch (err) {
     console.error('answerWithFAQ:', err.response?.data || err.message);
     writeLog(
-      'answerWithFAQ error: ' +
+      'answerWithFAQ error: ' + 
         (err.response?.data ? JSON.stringify(err.response.data) : err.message || String(err))
     );
     await sendText(
