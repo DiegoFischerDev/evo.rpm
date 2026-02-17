@@ -1166,7 +1166,7 @@ async function handleIncomingMessage({ remoteJid, text, instanceName, profileNam
         nome: firstName,
         origemInstancia: instanceName,
       });
-      await db.updateLeadState(lead.id, { conversa: 'em_pausa' });
+      await db.updateLeadState(lead.id, { conversa: 'em_boas_vindas' });
       runBoasVindasFlow(instanceName, remoteJid, firstName || lead.nome);
       return;
     }
@@ -1199,6 +1199,29 @@ async function handleIncomingMessage({ remoteJid, text, instanceName, profileNam
   }
 
   const lead = existingLead;
+
+  // Em boas-vindas: flow automático a correr; a Joana só responde quando o lead escreve "atendimento" (ou frase trigger) → passa a aguardando_escolha e envia o menu
+  if (lead.estado_conversa === 'em_boas_vindas') {
+    if (isTriggerPhrase(cleanText)) {
+      await db.updateLeadState(lead.id, { conversa: 'aguardando_escolha' });
+      const agora = new Date();
+      const hora = agora.getHours();
+      let saudacaoTempo = '';
+      if (hora >= 5 && hora < 12) saudacaoTempo = 'bom dia!';
+      else if (hora >= 12 && hora < 18) saudacaoTempo = 'boa tarde!';
+      else saudacaoTempo = 'boa noite!';
+      const firstName = getFirstName(lead.nome) || getFirstName(profileName);
+      const saudacaoNome = firstName
+        ? `Oi ${firstName}, ${saudacaoTempo} tudo bem?\n`
+        : `Oi, ${saudacaoTempo} tudo bem?\n`;
+      await sendText(
+        instanceName,
+        remoteJid,
+        `${saudacaoNome}Vou te ajudar por aqui 🙂\r\n\r\nPara começar, escreve:\r\n\r\nDUVIDA - se tens dúvidas sobre crédito habitação\r\n\r\nSIMULADOR - para simular a primeira parcela do crédito\r\n\r\nGESTORA - se já queres falar com a gestora para iniciar a sua análise\r\n\r\nFALAR COM RAFA - se precisas falar diretamente com a Rafa`
+      );
+    }
+    return;
+  }
 
   // Em pausa: Rafa/admin está a falar com o lead; a Joana não responde — exceto se o lead escrever atendimento, duvida, simulador ou gestora (sai e entra no fluxo correspondente)
   if (lead.estado_conversa === 'em_pausa') {
@@ -1307,7 +1330,7 @@ async function handleIncomingMessage({ remoteJid, text, instanceName, profileNam
 
   // Se o lead já existe e escrever "atendimento" (ou frase trigger), regressar ao menu apenas se estiver em aguardando_escolha.
   // Se estiver em com_duvida, a mensagem pode conter "crédito" (é a pergunta) — não resetar para não reenviar o menu.
-  if (lead.estado_conversa === 'aguardando_escolha' && isTriggerPhrase(cleanText)) {
+  if ((lead.estado_conversa === 'aguardando_escolha' || lead.estado_conversa == null) && isTriggerPhrase(cleanText)) {
     await db.updateLeadState(lead.id, { conversa: 'aguardando_escolha' });
     const agora = new Date();
     const hora = agora.getHours();
@@ -1339,8 +1362,8 @@ async function handleIncomingMessage({ remoteJid, text, instanceName, profileNam
     return;
   }
 
-  // Estados: estado_conversa (aguardando_escolha | com_duvida | com_gestora); quer_falar_com_rafa é flag separada
-  if (lead.estado_conversa === 'aguardando_escolha') {
+  // Estados: estado_conversa (NULL | aguardando_escolha | com_duvida | com_gestora); quer_falar_com_rafa é flag separada
+  if (lead.estado_conversa === 'aguardando_escolha' || lead.estado_conversa == null) {
     if (isCommand(text, CMD_DUVIDA)) {
       await db.updateLeadState(lead.id, { conversa: 'com_duvida' });
       await sendText(
