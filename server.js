@@ -853,7 +853,11 @@ async function answerWithFAQ(lead, text, instanceName) {
           const baseUrl = baseUrlRaw ? baseUrlRaw.replace(/\/$/, '') : '';
 
           const respostasComAudio = respostas.filter(
-            (r) => r && (r.audio_in_db === 1 || (r.audio_url && String(r.audio_url).trim().length > 0))
+            (r) =>
+              r &&
+              (r.audio_direct_url && String(r.audio_direct_url).trim().length > 0 ||
+                r.audio_in_db === 1 ||
+                (r.audio_url && String(r.audio_url).trim().length > 0))
           );
           const temAudio = respostasComAudio.length > 0;
 
@@ -872,7 +876,8 @@ async function answerWithFAQ(lead, text, instanceName) {
 
           if (temAudio && baseUrl) {
             for (const r of respostasComAudio) {
-              const rawUrl = String(r.audio_url || '').trim();
+              const rawDirect = String(r.audio_direct_url || '').trim();
+              const rawUrl = rawDirect || String(r.audio_url || '').trim();
               if (!rawUrl) continue;
               const fullAudioUrl = rawUrl.startsWith('http') ? rawUrl : baseUrl + rawUrl;
               if (!fullAudioUrl || !fullAudioUrl.startsWith('http')) continue;
