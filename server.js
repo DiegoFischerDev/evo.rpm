@@ -196,9 +196,10 @@ function normalizeText(text) {
     .trim();
 }
 
-/** Normaliza para comparação exata (colapsa espaços múltiplos). */
+/** Normaliza para comparação exata (colapsa espaços múltiplos, remove \\r). */
 function normalizeTextForTrigger(text) {
   return (text || '')
+    .replace(/\r/g, '')
     .normalize('NFD')
     .replace(/[\u0300-\u036f]/g, '')
     .toLowerCase()
@@ -1159,7 +1160,7 @@ async function handleIncomingMessage({ remoteJid, text, instanceName, profileNam
 
   // Lead ainda não existe
   if (!existingLead) {
-    if (isBoasVindasFlowTrigger(cleanText)) {
+    if (isBoasVindasFlowTrigger(text)) {
       const firstName = getFirstName(profileName);
       const lead = await db.createLead({
         remoteJid,
@@ -1200,9 +1201,9 @@ async function handleIncomingMessage({ remoteJid, text, instanceName, profileNam
 
   const lead = existingLead;
 
-  // Em boas-vindas: flow automático a correr; a Joana só responde quando o lead escreve "atendimento" (ou frase trigger) → passa a aguardando_escolha e envia o menu
+  // Em boas-vindas: flow automático a correr; a Joana só responde quando o lead escreve "atendimento" (ou frase trigger) ou repete a frase de boas-vindas → passa a aguardando_escolha e envia o menu
   if (lead.estado_conversa === 'em_boas_vindas') {
-    if (isTriggerPhrase(cleanText)) {
+    if (isTriggerPhrase(cleanText) || isBoasVindasFlowTrigger(text)) {
       await db.updateLeadState(lead.id, { conversa: 'aguardando_escolha' });
       const agora = new Date();
       const hora = agora.getHours();
