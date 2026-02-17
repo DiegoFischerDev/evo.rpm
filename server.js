@@ -600,7 +600,7 @@ function scheduleDuvidaBufferReminder(instanceName, leadId, remoteJid) {
   duvidaBufferTimerByKey.set(key, { timeoutId, remoteJid, instanceName });
 }
 
-async function sendText(instanceName, remoteJid, text) {
+async function sendText(instanceName, remoteJid, text, options) {
   if (!EVOLUTION_URL || !EVOLUTION_API_KEY) {
     console.warn('EVOLUTION_API_URL ou EVOLUTION_API_KEY não configuradas – resposta não enviada');
     return;
@@ -611,11 +611,12 @@ async function sendText(instanceName, remoteJid, text) {
       ? db.normalizeNumber(remoteJid)
       : (remoteJid || '').replace(/\D/g, '');
   if (!number) return;
-  // Prefixo padrão para mensagens enviadas pela Joana para leads
+  // Prefixo padrão para mensagens enviadas pela Joana para leads (pode ser desativado, ex.: fluxo boas-vindas)
+  const skipJoanaPrefix = options && options.skipJoanaPrefix === true;
   const adminNumber = (ADMIN_WHATSAPP || '').replace(/\D/g, '');
   const isAdmin = adminNumber && number === adminNumber;
   let finalText = text || '';
-  if (!isAdmin) {
+  if (!isAdmin && !skipJoanaPrefix) {
     const prefix = '👱‍♀️ Joana: ';
     if (!finalText.startsWith('👱‍♀️ Joana')) {
       finalText = prefix + finalText;
@@ -648,15 +649,21 @@ function runBoasVindasFlow(instanceName, remoteJid, firstName) {
   const msg4 =
     'Criamos uma automação para ajudar no seu atendimento. Para iniciar, basta escrever "atendimento". E qualquer coisa que precisar me chama 🤗 boa sorte!🍀';
 
+  const boasVindasOpt = { skipJoanaPrefix: true };
+
   setTimeout(() => {
-    sendText(instanceName, remoteJid, msg1).catch((err) =>
+    sendText(instanceName, remoteJid, msg1, boasVindasOpt).catch((err) =>
       console.error('[evo] boas-vindas msg1:', err?.response?.data || err.message)
     );
   }, 30 * 1000);
 
   setTimeout(() => {
-    sendText(instanceName, remoteJid, msg2).catch((err) =>
+    sendText(instanceName, remoteJid, msg2, boasVindasOpt).catch((err) =>
       console.error('[evo] boas-vindas msg2:', err?.response?.data || err.message)
+    );
+    // Mostrar "a gravar áudio..." no WhatsApp durante os 140s até ao envio do áudio
+    sendPresence(instanceName, remoteJid, 'recording', 140 * 1000).catch((err) =>
+      console.error('[evo] boas-vindas presence recording:', err?.response?.data || err.message)
     );
   }, (30 + 10) * 1000);
 
@@ -672,12 +679,46 @@ function runBoasVindasFlow(instanceName, remoteJid, firstName) {
   }, (30 + 10 + 140) * 1000);
 
   setTimeout(() => {
-    sendText(instanceName, remoteJid, msg4).catch((err) =>
+    sendText(instanceName, remoteJid, msg4, boasVindasOpt).catch((err) =>
       console.error('[evo] boas-vindas msg4:', err?.response?.data || err.message)
     );
   }, (30 + 10 + 140 + 40) * 1000);
 
   writeLog(`boas-vindas flow started for ${remoteJid} (${nome})`);
+}
+
+// Envio de presence (composing = "a escrever...", recording = "a gravar áudio...") – Evolution API Chat Controller
+async function sendPresence(instanceName, remoteJid, presence, delayMs) {
+  if (!EVOLUTION_URL || !EVOLUTION_API_KEY) return;
+  const instance = instanceName || EVOLUTION_INSTANCE;
+  const number =
+    typeof remoteJid === 'string' && remoteJid.includes('@')
+      ? db.normalizeNumber(remoteJid)
+      : (remoteJid || '').replace(/\D/g, '');
+  if (!number || !presence) return;
+  const delay = Math.max(0, Math.min(Number(delayMs) || 60000, 180000)); // 0–180s
+  try {
+    await axios.post(
+      `${EVOLUTION_URL}/chat/sendPresence/${instance}`,
+      {
+        number,
+        options: {
+          number,
+          presence: presence === 'recording' ? 'recording' : 'composing',
+          delay,
+        },
+      },
+      {
+        headers: {
+          'Content-Type': 'application/json',
+          apikey: EVOLUTION_API_KEY,
+        },
+        timeout: 10000,
+      }
+    );
+  } catch (err) {
+    console.error('[evo] sendPresence:', err?.response?.data || err.message);
+  }
 }
 
 // Envio de áudio (quando houver resposta em áudio no FAQ)
