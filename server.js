@@ -855,9 +855,9 @@ async function answerWithFAQ(lead, text, instanceName) {
           const respostasComAudio = respostas.filter(
             (r) =>
               r &&
-              (r.audio_direct_url && String(r.audio_direct_url).trim().length > 0 ||
-                r.audio_in_db === 1 ||
-                (r.audio_url && String(r.audio_url).trim().length > 0))
+              (r.audio_url && String(r.audio_url).trim().length > 0 ||
+                (r.audio_direct_url && String(r.audio_direct_url).trim().length > 0) ||
+                r.audio_in_db === 1)
           );
           const temAudio = respostasComAudio.length > 0;
 
@@ -874,12 +874,15 @@ async function answerWithFAQ(lead, text, instanceName) {
 
           await sendText(instanceName, lead.whatsapp_number, msg);
 
-          if (temAudio && baseUrl) {
+          if (temAudio) {
             for (const r of respostasComAudio) {
+              // Preferir o endpoint interno com token (audio_url), que sabemos que funciona com a Evolution.
+              const rawPrimary = String(r.audio_url || '').trim();
               const rawDirect = String(r.audio_direct_url || '').trim();
-              const rawUrl = rawDirect || String(r.audio_url || '').trim();
+              const rawUrl = rawPrimary || rawDirect;
               if (!rawUrl) continue;
-              const fullAudioUrl = rawUrl.startsWith('http') ? rawUrl : baseUrl + rawUrl;
+              const fullAudioUrl =
+                rawUrl.startsWith('http') || !baseUrl ? rawUrl : baseUrl + rawUrl;
               if (!fullAudioUrl || !fullAudioUrl.startsWith('http')) continue;
               try {
                 writeLog(`FAQ audio for lead ${lead.id} (${number}) -> ${fullAudioUrl}`);
