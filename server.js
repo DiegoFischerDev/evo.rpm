@@ -688,7 +688,8 @@ function runBoasVindasFlow(instanceName, remoteJid, firstName) {
 }
 
 // Envio de presence (composing = "a escrever...", recording = "a gravar áudio...")
-// Depende da Evolution API: pode ser /chat/sendPresence ou não existir na tua versão.
+// Evolution API: POST /chat/sendPresence/{instance} com body { number, presence, delay } (presence e delay no topo).
+// A API pode manter a conexão aberta durante o delay, por isso usamos timeout curto e tratamos timeout como sucesso.
 async function sendPresence(instanceName, remoteJid, presence, delayMs) {
   if (!EVOLUTION_URL || !EVOLUTION_API_KEY) return;
   const instance = instanceName || EVOLUTION_INSTANCE;
@@ -699,31 +700,25 @@ async function sendPresence(instanceName, remoteJid, presence, delayMs) {
   if (!number || !presence) return;
   const delay = Math.max(0, Math.min(Number(delayMs) || 60000, 180000)); // 0–180s
   const presenceType = presence === 'recording' ? 'recording' : 'composing';
+  const path = `${EVOLUTION_URL}/chat/sendPresence/${instance}`;
+  const body = { number, presence: presenceType, delay };
 
-  const endpoints = [
-    { path: `${EVOLUTION_URL}/chat/sendPresence/${instance}`, body: { number, options: { number, presence: presenceType, delay } } },
-    { path: `${EVOLUTION_URL}/chat/sendPresence/${instance}`, body: { number, presence: presenceType, delay } },
-    { path: `${EVOLUTION_URL}/message/sendPresence/${instance}`, body: { number, presence: presenceType, delay } },
-  ];
-
-  for (const { path, body } of endpoints) {
-    try {
-      const res = await axios.post(path, body, {
-        headers: { 'Content-Type': 'application/json', apikey: EVOLUTION_API_KEY },
-        timeout: 10000,
-      });
-      if (res.status >= 200 && res.status < 300) {
-        writeLog(`sendPresence ok -> ${number} ${presenceType}`);
-        return;
-      }
-    } catch (err) {
-      const status = err.response?.status;
-      const data = err.response?.data;
-      writeLog(`sendPresence try ${path} -> ${status || ''} ${data ? JSON.stringify(data) : err.message}`);
-      continue;
+  try {
+    await axios.post(path, body, {
+      headers: { 'Content-Type': 'application/json', apikey: EVOLUTION_API_KEY },
+      timeout: 5000, // API pode não responder até ao fim do delay; 5s é suficiente para aceitar o pedido
+    });
+    writeLog(`sendPresence ok -> ${number} ${presenceType} delay=${delay}ms`);
+  } catch (err) {
+    const status = err.response?.status;
+    const data = err.response?.data;
+    const isTimeout = err.code === 'ECONNABORTED' || err.message?.includes('timeout');
+    if (isTimeout) {
+      writeLog(`sendPresence sent (timeout expected) -> ${number} ${presenceType} delay=${delay}ms`);
+      return;
     }
+    writeLog(`sendPresence failed -> ${path} ${status || ''} ${data ? JSON.stringify(data) : err.message}`);
   }
-  writeLog(`sendPresence failed for ${number} (tried ${endpoints.length} variants). A tua Evolution API pode não suportar este endpoint.`);
 }
 
 // Envio de áudio (quando houver resposta em áudio no FAQ)
