@@ -1153,32 +1153,60 @@ async function answerWithAI(lead, text, instanceName) {
 
 // Máquina de estados principal
 async function handleIncomingMessage({ remoteJid, text, instanceName, profileName }) {
+  const textSnippet = (text || '').slice(0, 80).replace(/\n/g, ' ');
+  writeLog(`handleIncomingMessage remoteJid=${remoteJid} text="${textSnippet}..."`);
+
   const cleanText = normalizeText(text);
-  if (!cleanText) return;
+  if (!cleanText) {
+    writeLog('handleIncomingMessage skip: cleanText vazio');
+    return;
+  }
 
   const existingLead = await db.findLeadByWhatsapp(remoteJid);
+  writeLog(`handleIncomingMessage existingLead=${existingLead ? existingLead.id : 'null'} estado_conversa=${existingLead?.estado_conversa ?? 'n/a'}`);
+
+  const isBoasVindas = isBoasVindasFlowTrigger(text);
+  writeLog(`handleIncomingMessage isBoasVindasFlowTrigger="${textSnippet}" => ${isBoasVindas}`);
 
   // Lead ainda não existe
   if (!existingLead) {
-    if (isBoasVindasFlowTrigger(text)) {
-      const firstName = getFirstName(profileName);
-      const lead = await db.createLead({
+    if (isBoasVindas) {
+      writeLog(`handleIncomingMessage criando lead em_boas_vindas remoteJid=${remoteJid}`);
+      try {
+        const firstName = getFirstName(profileName);
+        const lead = await db.createLead({
+          remoteJid,
+          nome: firstName,
+          origemInstancia: instanceName,
+          estadoConversa: 'em_boas_vindas',
+        });
+        writeLog(`handleIncomingMessage lead criado id=${lead?.id} whatsapp=${lead?.whatsapp_number}`);
+        runBoasVindasFlow(instanceName, remoteJid, firstName || lead.nome);
+      } catch (err) {
+        writeLog(`handleIncomingMessage createLead (boas-vindas) ERRO: ${err.message}`);
+        throw err;
+      }
+      return;
+    }
+    if (!isTriggerPhrase(cleanText)) {
+      writeLog(`handleIncomingMessage skip: lead inexistente e não é trigger nem boas-vindas`);
+      return;
+    }
+
+    writeLog(`handleIncomingMessage criando lead aguardando_escolha remoteJid=${remoteJid}`);
+    const firstName = getFirstName(profileName);
+    let lead;
+    try {
+      lead = await db.createLead({
         remoteJid,
         nome: firstName,
         origemInstancia: instanceName,
       });
-      await db.updateLeadState(lead.id, { conversa: 'em_boas_vindas' });
-      runBoasVindasFlow(instanceName, remoteJid, firstName || lead.nome);
-      return;
+      writeLog(`handleIncomingMessage lead criado id=${lead?.id}`);
+    } catch (err) {
+      writeLog(`handleIncomingMessage createLead (trigger) ERRO: ${err.message}`);
+      throw err;
     }
-    if (!isTriggerPhrase(cleanText)) return;
-
-    const firstName = getFirstName(profileName);
-    const lead = await db.createLead({
-      remoteJid,
-      nome: firstName,
-      origemInstancia: instanceName,
-    });
 
     const agora = new Date();
     const hora = agora.getHours();
@@ -1560,12 +1588,14 @@ app.post('/webhook/evolution', (req, res) => {
   const profileName = data.pushName || data.profileName || null;
 
   const messages = Array.isArray(data.messages) ? data.messages : (data.message ? [data] : []);
+  writeLog(`webhook evolution event=${event} messages.length=${messages.length} remoteJid=${remoteJid}`);
   for (const msg of messages) {
     const msgKey = msg.key || key;
     const isFromMe = msgKey.fromMe === true || msgKey.fromMe === 'true' || fromMe;
     const jid = msgKey.remoteJid || remoteJid;
     const message = msg.message || msg;
     const text = getMessageText(message);
+    writeLog(`webhook msg jid=${jid} fromMe=${isFromMe} textLen=${(text || '').length} textSnippet="${(text || '').slice(0, 60)}"`);
     if (!text) continue;
     if (isFromMe) {
       handleOutgoingBoaSorte(jid, text, instanceName).catch((err) =>

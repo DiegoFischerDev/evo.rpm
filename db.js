@@ -38,12 +38,13 @@ async function findLeadByWhatsapp(remoteJid) {
   return rows[0] || null;
 }
 
-async function createLead({ remoteJid, nome, origemInstancia }) {
+async function createLead({ remoteJid, nome, origemInstancia, estadoConversa = 'aguardando_escolha' }) {
   const number = normalizeNumber(remoteJid);
+  const estado = estadoConversa || 'aguardando_escolha';
   await query(
     `INSERT INTO ch_leads (whatsapp_number, nome, origem_instancia, estado_conversa, estado_docs, created_at, updated_at)
-     VALUES (?, ?, ?, NULL, 'sem_docs', NOW(), NOW())`,
-    [number, nome || null, origemInstancia || null]
+     VALUES (?, ?, ?, ?, 'sem_docs', NOW(), NOW())`,
+    [number, nome || null, origemInstancia || null, estado]
   );
   const rows = await query(
     'SELECT * FROM ch_leads WHERE whatsapp_number = ? ORDER BY created_at DESC LIMIT 1',
