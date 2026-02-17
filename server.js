@@ -1383,13 +1383,13 @@ async function handleIncomingMessage({ remoteJid, text, instanceName, profileNam
   }
 }
 
-// Quando a Rafa envia "boa sorte!" para o lead (mensagem fromMe), remove a flag e sai de em_pausa
+// Quando a Rafa/admin envia "Boa sorte!" para o lead (mensagem fromMe), volta ao aguardando_escolha e remove flag
 async function handleOutgoingBoaSorte(remoteJid, text, instanceName) {
   if (!remoteJid || !isBoaSorteMessage(text)) return;
   const lead = await db.findLeadByWhatsapp(remoteJid);
-  if (!lead || !lead.quer_falar_com_rafa) return;
+  if (!lead) return;
   await db.updateLeadState(lead.id, { conversa: 'aguardando_escolha', querFalarComRafa: false });
-  console.log(`[evo] Lead ${lead.id} (${remoteJid}): "boa sorte!" → aguardando_escolha, quer_falar_com_rafa = 0`);
+  console.log(`[evo] Lead ${lead.id} (${remoteJid}): "Boa sorte!" → aguardando_escolha, quer_falar_com_rafa = 0`);
 }
 
 // Quando o admin envia "pausar" para o lead (mensagem fromMe), coloca o lead em em_pausa
