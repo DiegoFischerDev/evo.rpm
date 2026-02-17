@@ -640,6 +640,7 @@ async function sendAudio(instanceName, remoteJid, audioUrl) {
   if (!number) return;
   const url = (audioUrl || '').trim();
   if (!url) return;
+  writeLog(`sendAudio -> number=${number}, url=${url}`);
   await axios.post(
     `${EVOLUTION_URL}/message/sendWhatsAppAudio/${instance}`,
     { number, audio: url },
@@ -876,6 +877,7 @@ async function answerWithFAQ(lead, text, instanceName) {
               const fullAudioUrl = rawUrl.startsWith('http') ? rawUrl : baseUrl + rawUrl;
               if (!fullAudioUrl || !fullAudioUrl.startsWith('http')) continue;
               try {
+                writeLog(`FAQ audio for lead ${lead.id} (${number}) -> ${fullAudioUrl}`);
                 await sendAudio(instanceName, lead.whatsapp_number, fullAudioUrl);
               } catch (err) {
                 console.error('sendAudio (FAQ):', err.response?.data || err.message);
