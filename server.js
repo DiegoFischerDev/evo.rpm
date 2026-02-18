@@ -1432,11 +1432,58 @@ async function handleIncomingMessage({ remoteJid, text, instanceName, profileNam
     return;
   }
 
-  if (
-    lead.estado_conversa === 'com_duvida' ||
-    lead.estado_docs === 'docs_enviados' ||
-    (lead.estado_conversa === 'com_gestora' && lead.estado_docs === 'aguardando_docs')
-  ) {
+  // com_gestora ou docs_enviados: qualquer mensagem que não seja comando → resposta fixa (não regista dúvida)
+  if (lead.estado_conversa === 'com_gestora' || lead.estado_docs === 'docs_enviados') {
+    if (isCommand(text, CMD_DUVIDA)) {
+      const key = getDuvidaBufferKey(instanceName, lead.id);
+      clearDuvidaBufferTimer(key);
+      duvidaBufferByLead.delete(key);
+      await db.updateLeadState(lead.id, { conversa: 'com_duvida' });
+      await sendText(
+        instanceName,
+        remoteJid,
+        'Sem problema! Podes voltar a enviar as tuas dúvidas sobre crédito habitação e eu respondo por aqui.'
+      );
+      return;
+    }
+    if (isCommand(text, CMD_GESTORA)) {
+      if (lead.estado_docs !== 'docs_enviados') {
+        await db.updateLeadState(lead.id, { conversa: 'com_gestora', docs: 'aguardando_docs' });
+      }
+      const uploadLink = `${process.env.UPLOAD_BASE_URL || 'https://ia.rafaapelomundo.com'}/upload/${lead.id}`;
+      await sendText(
+        instanceName,
+        remoteJid,
+        `Perfeito! Para avançarmos, usa este link para enviar os documentos: ${uploadLink}. Esses documentos são confidenciais e apenas a gestora terá acesso a eles.`
+      );
+      return;
+    }
+    if (isCommand(text, CMD_FALAR_COM_RAFA)) {
+      await db.updateLeadState(lead.id, { conversa: 'em_pausa', querFalarComRafa: true });
+      await sendText(
+        instanceName,
+        remoteJid,
+        'Certo, vou pedir para a Rafa falar contigo diretamente. Em breve ela entra em contacto por aqui no WhatsApp.'
+      );
+      notifyAdminFalarComRafa(instanceName, lead, remoteJid).catch((err) =>
+        console.error('notifyAdminFalarComRafa:', err.message)
+      );
+      return;
+    }
+    // Qualquer outra mensagem → resposta fixa conforme estado (não regista como dúvida)
+    const msgDocsEnviados =
+      'Se tua duvida é sobre credito habitação escreve DUVIDA, mas se é em relação ao seu processo ou sobre envio de documentos, escreve FALAR COM RAFA que a produção vem aqui te ajudar 😊';
+    const msgComGestora =
+      'Se tua duvida é sobre credito habitação escreve DUVIDA, mas se é em relação a algum bug ou dificuldade para enviar os documentos, escreve FALAR COM RAFA que a produção vem aqui te ajudar 😊';
+    await sendText(
+      instanceName,
+      remoteJid,
+      lead.estado_docs === 'docs_enviados' ? msgDocsEnviados : msgComGestora
+    );
+    return;
+  }
+
+  if (lead.estado_conversa === 'com_duvida') {
     // DUVIDA aqui deve ser tratada como comando para iniciar uma nova pergunta,
     // não como texto da própria pergunta.
     if (isCommand(text, CMD_DUVIDA)) {
@@ -1514,14 +1561,6 @@ async function handleIncomingMessage({ remoteJid, text, instanceName, profileNam
     }
 
     await answerWithFAQ(lead, textToAnalyze, instanceName);
-    if (lead.estado_conversa === 'com_gestora' && lead.estado_docs === 'aguardando_docs') {
-      const uploadLink = `${process.env.UPLOAD_BASE_URL || 'https://ia.rafaapelomundo.com'}/upload/${lead.id}`;
-      await sendText(
-        instanceName,
-        remoteJid,
-        `Quando estiveres pronto, usa este link para enviar os documentos: ${uploadLink}.`
-      );
-    }
     return;
   }
 
