@@ -649,7 +649,7 @@ async function runBoasVindasFlow(instanceName, remoteJid, firstName) {
   const msg1 = nome ? `oi ${nome}` : 'oieee';
   const msg2 = 'Tudo bem? 😊';
   const msg4 =
-    'Criamos uma automação para ajudar no seu atendimento. Para iniciar, basta escrever "atendimento". E qualquer coisa que precisar me chama 🤗 boa sorte!🍀';
+    'Criamos uma automação para ajudar no seu atendimento. É gratuito e para iniciar, basta escrever "atendimento". E qualquer coisa que precisar me chama 🤗 boa sorte!🍀';
 
   try {
     await db.insertBoasVindasSteps(instanceName, remoteJid, msg1, msg2, msg4);
