@@ -1432,8 +1432,8 @@ async function handleIncomingMessage({ remoteJid, text, instanceName, profileNam
     return;
   }
 
-  // com_gestora ou docs_enviados: qualquer mensagem que não seja comando → resposta fixa (não regista dúvida)
-  if (lead.estado_conversa === 'com_gestora' || lead.estado_docs === 'docs_enviados') {
+  // com_gestora: qualquer mensagem que não seja comando → resposta fixa (não regista dúvida)
+  if (lead.estado_conversa === 'com_gestora') {
     if (isCommand(text, CMD_DUVIDA)) {
       const key = getDuvidaBufferKey(instanceName, lead.id);
       clearDuvidaBufferTimer(key);
@@ -1470,15 +1470,15 @@ async function handleIncomingMessage({ remoteJid, text, instanceName, profileNam
       );
       return;
     }
-    // Qualquer outra mensagem → resposta fixa conforme estado (não regista como dúvida)
+    // Qualquer outra mensagem → resposta fixa (texto conforme estado_docs só para nuance, não como condição de fluxo)
     const msgDocsEnviados =
       'Se tua duvida é sobre credito habitação escreve DUVIDA, mas se é em relação ao seu processo ou sobre envio de documentos, escreve FALAR COM RAFA que a produção vem aqui te ajudar 😊';
-    const msgComGestora =
+    const msgAguardandoDocs =
       'Se tua duvida é sobre credito habitação escreve DUVIDA, mas se é em relação a algum bug ou dificuldade para enviar os documentos, escreve FALAR COM RAFA que a produção vem aqui te ajudar 😊';
     await sendText(
       instanceName,
       remoteJid,
-      lead.estado_docs === 'docs_enviados' ? msgDocsEnviados : msgComGestora
+      lead.estado_docs === 'docs_enviados' ? msgDocsEnviados : msgAguardandoDocs
     );
     return;
   }
