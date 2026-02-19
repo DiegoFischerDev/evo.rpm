@@ -50,6 +50,14 @@ const IA_APP_BASE_URL = (process.env.IA_APP_URL || process.env.UPLOAD_BASE_URL |
 
 const openai = OPENAI_API_KEY ? new OpenAI({ apiKey: OPENAI_API_KEY }) : null;
 
+// Debug: log do comprimento e da metade da chave (para confirmar qual key está carregada)
+(function () {
+  const key = OPENAI_API_KEY || '';
+  const len = key.length;
+  const half = len ? key.slice(0, Math.floor(len / 2)) : '(vazia)';
+  writeLog('OPENAI_API_KEY length=' + len + ' metade=' + half);
+})();
+
 // Contadores simples em memória por lead
 // - respostas de IA (para lembrete de navegação)
 // - perguntas feitas (para limitar uso e economizar tokens)
