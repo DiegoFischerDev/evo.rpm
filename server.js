@@ -50,14 +50,6 @@ const IA_APP_BASE_URL = (process.env.IA_APP_URL || process.env.UPLOAD_BASE_URL |
 
 const openai = OPENAI_API_KEY ? new OpenAI({ apiKey: OPENAI_API_KEY }) : null;
 
-// Debug: log do comprimento e da metade da chave (para confirmar qual key está carregada)
-(function () {
-  const key = OPENAI_API_KEY || '';
-  const len = key.length;
-  const half = len ? key.slice(0, Math.floor(len / 2)) : '(vazia)';
-  writeLog('OPENAI_API_KEY length=' + len + ' metade=' + half);
-})();
-
 // Contadores simples em memória por lead
 // - respostas de IA (para lembrete de navegação)
 // - perguntas feitas (para limitar uso e economizar tokens)
@@ -661,7 +653,6 @@ async function runBoasVindasFlow(instanceName, remoteJid, firstName) {
 
   try {
     await db.insertBoasVindasSteps(instanceName, remoteJid, msg1, msg2, msg4);
-    writeLog(`boas-vindas flow started for ${remoteJid} (${nome}) – steps queued`);
   } catch (err) {
     writeLog(`boas-vindas queue insert failed: ${err.message}`);
   }
@@ -683,7 +674,6 @@ async function processBoasVindasQueue() {
       if (step === 1 || step === 2 || step === 4) {
         const text = payload || '';
         await sendText(instance_name, remote_jid, text, boasVindasOpt);
-        writeLog(`boas-vindas step ${step} sent to ${remote_jid}`);
         if (step === 2) {
           sendPresence(instance_name, remote_jid, 'recording', 70 * 1000).catch(() => {});
         }
@@ -691,9 +681,6 @@ async function processBoasVindasQueue() {
         if (IA_APP_BASE_URL && EVO_INTERNAL_SECRET) {
           const audioUrl = `${IA_APP_BASE_URL}/api/internal/audios-rafa/boas_vindas?token=${encodeURIComponent(EVO_INTERNAL_SECRET)}`;
           await sendAudio(instance_name, remote_jid, audioUrl);
-          writeLog(`boas-vindas step 3 (audio) sent to ${remote_jid}`);
-        } else {
-          writeLog(`boas-vindas step 3 skipped: IA_APP_BASE_URL or EVO_INTERNAL_SECRET missing`);
         }
       }
     } catch (err) {
@@ -728,15 +715,11 @@ async function sendPresence(instanceName, remoteJid, presence, delayMs) {
       headers: { 'Content-Type': 'application/json', apikey: EVOLUTION_API_KEY },
       timeout: 5000, // API pode não responder até ao fim do delay; 5s é suficiente para aceitar o pedido
     });
-    writeLog(`sendPresence ok -> ${number} ${presenceType} delay=${delay}ms`);
   } catch (err) {
     const status = err.response?.status;
     const data = err.response?.data;
     const isTimeout = err.code === 'ECONNABORTED' || err.message?.includes('timeout');
-    if (isTimeout) {
-      writeLog(`sendPresence sent (timeout expected) -> ${number} ${presenceType} delay=${delay}ms`);
-      return;
-    }
+    if (isTimeout) return;
     writeLog(`sendPresence failed -> ${path} ${status || ''} ${data ? JSON.stringify(data) : err.message}`);
   }
 }
@@ -755,7 +738,6 @@ async function sendAudio(instanceName, remoteJid, audioUrl) {
   if (!number) return;
   const url = (audioUrl || '').trim();
   if (!url) return;
-  writeLog(`sendAudio -> number=${number}, url=${url}`);
   await axios.post(
     `${EVOLUTION_URL}/message/sendWhatsAppAudio/${instance}`,
     { number, audio: url },
@@ -1000,7 +982,6 @@ async function answerWithFAQ(lead, text, instanceName) {
                 rawUrl.startsWith('http') || !baseUrl ? rawUrl : baseUrl + rawUrl;
               if (!fullAudioUrl || !fullAudioUrl.startsWith('http')) continue;
               try {
-                writeLog(`FAQ audio for lead ${lead.id} (${number}) -> ${fullAudioUrl}`);
                 await sendAudio(instanceName, lead.whatsapp_number, fullAudioUrl);
               } catch (err) {
                 console.error('sendAudio (FAQ):', err.response?.data || err.message);
@@ -1161,25 +1142,15 @@ async function answerWithAI(lead, text, instanceName) {
 
 // Máquina de estados principal
 async function handleIncomingMessage({ remoteJid, text, instanceName, profileName }) {
-  const textSnippet = (text || '').slice(0, 80).replace(/\n/g, ' ');
-  writeLog(`handleIncomingMessage remoteJid=${remoteJid} text="${textSnippet}..."`);
-
   const cleanText = normalizeText(text);
-  if (!cleanText) {
-    writeLog('handleIncomingMessage skip: cleanText vazio');
-    return;
-  }
+  if (!cleanText) return;
 
   const existingLead = await db.findLeadByWhatsapp(remoteJid);
-  writeLog(`handleIncomingMessage existingLead=${existingLead ? existingLead.id : 'null'} estado_conversa=${existingLead?.estado_conversa ?? 'n/a'}`);
-
   const isBoasVindas = isBoasVindasFlowTrigger(text);
-  writeLog(`handleIncomingMessage isBoasVindasFlowTrigger="${textSnippet}" => ${isBoasVindas}`);
 
   // Lead ainda não existe
   if (!existingLead) {
     if (isBoasVindas) {
-      writeLog(`handleIncomingMessage criando lead em_boas_vindas remoteJid=${remoteJid}`);
       try {
         const firstName = getFirstName(profileName);
         const lead = await db.createLead({
@@ -1188,7 +1159,6 @@ async function handleIncomingMessage({ remoteJid, text, instanceName, profileNam
           origemInstancia: instanceName,
           estadoConversa: 'em_boas_vindas',
         });
-        writeLog(`handleIncomingMessage lead criado id=${lead?.id} whatsapp=${lead?.whatsapp_number}`);
         runBoasVindasFlow(instanceName, remoteJid, firstName || lead.nome);
       } catch (err) {
         writeLog(`handleIncomingMessage createLead (boas-vindas) ERRO: ${err.message}`);
@@ -1196,12 +1166,8 @@ async function handleIncomingMessage({ remoteJid, text, instanceName, profileNam
       }
       return;
     }
-    if (!isTriggerPhrase(cleanText)) {
-      writeLog(`handleIncomingMessage skip: lead inexistente e não é trigger nem boas-vindas`);
-      return;
-    }
+    if (!isTriggerPhrase(cleanText)) return;
 
-    writeLog(`handleIncomingMessage criando lead aguardando_escolha remoteJid=${remoteJid}`);
     const firstName = getFirstName(profileName);
     let lead;
     try {
@@ -1210,7 +1176,6 @@ async function handleIncomingMessage({ remoteJid, text, instanceName, profileNam
         nome: firstName,
         origemInstancia: instanceName,
       });
-      writeLog(`handleIncomingMessage lead criado id=${lead?.id}`);
     } catch (err) {
       writeLog(`handleIncomingMessage createLead (trigger) ERRO: ${err.message}`);
       throw err;
@@ -1635,14 +1600,12 @@ app.post('/webhook/evolution', (req, res) => {
   const profileName = data.pushName || data.profileName || null;
 
   const messages = Array.isArray(data.messages) ? data.messages : (data.message ? [data] : []);
-  writeLog(`webhook evolution event=${event} messages.length=${messages.length} remoteJid=${remoteJid}`);
   for (const msg of messages) {
     const msgKey = msg.key || key;
     const isFromMe = msgKey.fromMe === true || msgKey.fromMe === 'true' || fromMe;
     const jid = msgKey.remoteJid || remoteJid;
     const message = msg.message || msg;
     const text = getMessageText(message);
-    writeLog(`webhook msg jid=${jid} fromMe=${isFromMe} textLen=${(text || '').length} textSnippet="${(text || '').slice(0, 60)}"`);
     if (!text) continue;
     if (isFromMe) {
       handleOutgoingBoaSorte(jid, text, instanceName).catch((err) =>
