@@ -22,7 +22,7 @@ Seguir por ordem. Se algo falhar, para aí e corrige antes de avançar.
    ```
 
 2. A resposta deve trazer um **QR code** (por exemplo em base64 ou URL).  
-   Se tiveres uma UI (ex.: front da Evolution), abre a página que mostra o QR.
+   Se tiveres uma UI (ex.: front da Evolution), abre a página que mostra o QR
 
 3. No **WhatsApp** (telemóvel):  
    **Definições → Aparelhos ligados → Ligar um aparelho**  
