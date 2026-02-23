@@ -71,9 +71,11 @@ app.use(express.json({ limit: '1mb' }));
 
 const EVO_INTERNAL_SECRET = process.env.EVO_INTERNAL_SECRET || process.env.IA_APP_EVO_SECRET || '';
 
-// Health check
+const SERVER_STARTED_AT = new Date().toISOString();
+
+// Health check (startedAt = hora em que ESTE processo arrancou; útil para confirmar que reiniciou após deploy)
 app.get('/api/health', (req, res) => {
-  res.json({ ok: true, app: 'evo', time: new Date().toISOString() });
+  res.json({ ok: true, app: 'evo', time: new Date().toISOString(), startedAt: SERVER_STARTED_AT });
 });
 
 // Envio de texto para um número (chamado pelo ia-app quando gestora responde a dúvida pendente)
