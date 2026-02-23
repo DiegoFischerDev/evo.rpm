@@ -1277,7 +1277,7 @@ async function handleIncomingMessage({ remoteJid, text, instanceName, profileNam
         remoteJid,
         'Ótimo! Para que a gestora inicie a análise do seu caso, você precisa enviar alguns documentos. Esses documentos podem ser enviados diretamente para ela através dessa plataforma:'
       );
-      await sendText(instanceName, remoteJid, uploadLink);
+      await sendText(instanceName, remoteJid, uploadLink, { skipJoanaPrefix: true });
       return;
     }
     return;
@@ -1310,7 +1310,7 @@ async function handleIncomingMessage({ remoteJid, text, instanceName, profileNam
           remoteJid,
           'Ótimo! Para que a gestora inicie a análise do seu caso, você precisa enviar alguns documentos. Esses documentos podem ser enviados diretamente para ela através dessa plataforma:'
         );
-        await sendText(instanceName, remoteJid, uploadLink);
+        await sendText(instanceName, remoteJid, uploadLink, { skipJoanaPrefix: true });
         return;
       }
       if (isCommand(text, CMD_FALAR_COM_RAFA)) {
@@ -1385,7 +1385,7 @@ async function handleIncomingMessage({ remoteJid, text, instanceName, profileNam
         remoteJid,
         'Ótimo! Para que a gestora inicie a análise do seu caso, você precisa enviar alguns documentos. Esses documentos podem ser enviados diretamente para ela através dessa plataforma:'
       );
-      await sendText(instanceName, remoteJid, uploadLink);
+      await sendText(instanceName, remoteJid, uploadLink, { skipJoanaPrefix: true });
       return;
     }
     if (isCommand(text, CMD_FALAR_COM_RAFA)) {
@@ -1432,7 +1432,7 @@ async function handleIncomingMessage({ remoteJid, text, instanceName, profileNam
         remoteJid,
         'Ótimo! Para que a gestora inicie a análise do seu caso, você precisa enviar alguns documentos. Esses documentos podem ser enviados diretamente para ela através dessa plataforma:'
       );
-      await sendText(instanceName, remoteJid, uploadLink);
+      await sendText(instanceName, remoteJid, uploadLink, { skipJoanaPrefix: true });
       return;
     }
     if (isCommand(text, CMD_FALAR_COM_RAFA)) {
@@ -1486,7 +1486,7 @@ async function handleIncomingMessage({ remoteJid, text, instanceName, profileNam
         remoteJid,
         'Ótimo! Para que a gestora inicie a análise do seu caso, você precisa enviar alguns documentos. Esses documentos podem ser enviados diretamente para ela através dessa plataforma:'
       );
-      await sendText(instanceName, remoteJid, uploadLink);
+      await sendText(instanceName, remoteJid, uploadLink, { skipJoanaPrefix: true });
       return;
     }
     if (isCommand(text, CMD_FALAR_COM_RAFA)) {
@@ -1564,7 +1564,7 @@ async function handleIncomingMessage({ remoteJid, text, instanceName, profileNam
         remoteJid,
         'Ótimo! Para que a gestora inicie a análise do seu caso, você precisa enviar alguns documentos. Esses documentos podem ser enviados diretamente para ela através dessa plataforma:'
       );
-      await sendText(instanceName, remoteJid, uploadLink);
+      await sendText(instanceName, remoteJid, uploadLink, { skipJoanaPrefix: true });
       return;
     }
   }
