@@ -1483,9 +1483,9 @@ async function handleIncomingMessage({ remoteJid, text, instanceName, profileNam
       }
     }
     const msgDocsEnviados =
-      'Se tua duvida é sobre credito habitação escreve DUVIDA, mas se é em relação ao seu processo ou sobre envio de documentos, escreve FALAR COM RAFA que a produção vem aqui te ajudar 😊';
+      'Se tua duvida é sobre credito habitação escreve DUVIDA, mas se é em relação ao seu processo ou sobre envio de documentos, escreve FALAR COM RAFA que a produção vem aqui te ajudarr 😊';
     const msgAguardandoDocs =
-      'Se tua duvida é sobre credito habitação escreve DUVIDA, mas se é em relação a algum bug ou dificuldade para enviar os documentos, escreve FALAR COM RAFA que a produção vem aqui te ajudar 😊';
+      'Se tua duvida é sobre credito habitação escreve DUVIDA, mas se é em relação a algum bug ou dificuldade para enviar os documentos, escreve FALAR COM RAFA que a produção vem aqui te ajudarr 😊';
     const msgBase = lead.estado_docs === 'docs_enviados' ? msgDocsEnviados : msgAguardandoDocs;
     await sendText(
       instanceName,
