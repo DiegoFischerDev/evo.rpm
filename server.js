@@ -22,6 +22,16 @@ function writeLog(line) {
   }
 }
 
+/** Envia uma linha de log para o WhatsApp (LOGS_WHATSAPP). Não grava em ficheiro. Fire-and-forget. */
+function logToWhatsApp(line) {
+  const msg = `[evo] ${new Date().toISOString()} ${line}`;
+  const number = (LOGS_WHATSAPP || '').replace(/\D/g, '');
+  if (!number) return;
+  sendText(null, number, msg, { skipJoanaPrefix: true }).catch((err) => {
+    console.error('logToWhatsApp falhou:', err.message);
+  });
+}
+
 // Carrega .env: primeiro na pasta do server, depois na pasta pai (sobrevive ao deploy na Hostinger)
 const envPathLocal = path.join(__dirname, '.env');
 const envPathParent = path.join(__dirname, '..', '.env');
@@ -45,6 +55,7 @@ const EVOLUTION_URL = (process.env.EVOLUTION_API_URL || '').replace(/\/$/, '');
 const EVOLUTION_API_KEY = process.env.EVOLUTION_API_KEY || '';
 const EVOLUTION_INSTANCE = process.env.EVOLUTION_INSTANCE || 'DiegoWoo';
 const ADMIN_WHATSAPP = '351927398547';
+const LOGS_WHATSAPP = process.env.LOGS_WHATSAPP || ADMIN_WHATSAPP; // número que recebe os logs (default: mesmo do admin)
 const OPENAI_API_KEY = process.env.OPENAI_API_KEY || '';
 const IA_APP_BASE_URL = (process.env.IA_APP_URL || process.env.UPLOAD_BASE_URL || 'http://localhost:3000').replace(/\/$/, '');
 
@@ -1450,13 +1461,17 @@ async function handleIncomingMessage({ remoteJid, text, instanceName, profileNam
     // Qualquer outra mensagem → resposta fixa. Se tiver gestora atribuída (ex.: após confirmar email na página de upload), mensagem com nome/email/WhatsApp da gestora.
     // Re-buscar o lead para ter gestora_id atualizado (a atribuição é feita no ia-app ao confirmar email)
     const leadAtual = await db.findLeadByWhatsapp(remoteJid).catch(() => lead) || lead;
-    const rawGestoraId = leadAtual.gestora_id;
+    const rawGestoraId = leadAtual.gestora_id ?? leadAtual.Gestora_id;
     const gestoraId = rawGestoraId != null && rawGestoraId !== '' ? (Number(rawGestoraId) || null) : null;
+    logToWhatsApp(`[com_gestora] leadId=${lead.id} gestora_id(raw)=${rawGestoraId} gestoraId=${gestoraId}`);
     if (gestoraId) {
       const gestora = await db.getGestoraById(gestoraId).catch((err) => {
-        console.error('getGestoraById', gestoraId, err.message);
+        logToWhatsApp(`getGestoraById ${gestoraId} ERRO: ${err.message}`);
         return null;
       });
+      if (!gestora || !(gestora.nome || gestora.email || gestora.whatsapp)) {
+        logToWhatsApp(`[com_gestora] gestora não usada: getGestoraById(${gestoraId}) => ${gestora ? 'dados vazios' : 'null'}`);
+      }
       if (gestora && (gestora.nome || gestora.email || gestora.whatsapp)) {
         const nomeGestora = gestora.nome || 'Gestora';
         const emailGestora = gestora.email || '';
