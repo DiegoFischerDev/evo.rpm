@@ -1477,30 +1477,21 @@ async function handleIncomingMessage({ remoteJid, text, instanceName, profileNam
       if (gestora && (gestora.nome || gestora.email || gestora.whatsapp)) {
         const nomeGestora = gestora.nome || 'Gestora';
         const emailGestora = gestora.email || '';
+        const numeroWhatsapp = gestora.whatsapp ? '+' + gestora.whatsapp : '';
         const docsEnviados = (leadAtual.estado_docs || lead.estado_docs) === 'docs_enviados';
         let msg =
           docsEnviados
             ? `Sua gestora (${nomeGestora}) já recebeu os seus documentos.`
             : `Sua gestora (${nomeGestora}) está aguardando o envio dos seus documentos para início da sua análise.`;
-        if (emailGestora) {
-          msg += ' Você pode contactá-la pelo email ' + emailGestora;
-          if (gestora.whatsapp) msg += ' ou pelo whatsapp, clicando no link:';
-          else msg += '.';
-        } else if (gestora.whatsapp) {
-          msg += ' Você pode contactá-la pelo whatsapp, clicando no link:';
+        if (emailGestora || numeroWhatsapp) {
+          if (emailGestora) msg += ' Você pode contactá-la pelo email ' + emailGestora;
+          if (emailGestora && numeroWhatsapp) msg += ' ou pelo whatsapp ' + numeroWhatsapp + '.';
+          else if (numeroWhatsapp) msg += ' Você pode contactá-la pelo whatsapp ' + numeroWhatsapp + '.';
+          else if (emailGestora) msg += '.';
         } else {
           msg += ' Em breve ela entrará em contacto.';
         }
         await sendText(instanceName, remoteJid, msg);
-        if (gestora.whatsapp) {
-          const waLink = 'https://wa.me/' + gestora.whatsapp;
-          logToWhatsApp(`[com_gestora] enviando link WhatsApp da gestora ${gestora.nome} para leadId=${lead.id}: ${waLink}`);
-          try {
-            await sendText(instanceName, remoteJid, waLink, { skipJoanaPrefix: true });
-          } catch (err) {
-            logToWhatsApp(`[com_gestora] ERRO ao enviar link WhatsApp para leadId=${lead.id}: ${err.message || err}`);
-          }
-        }
         return;
       }
     }
