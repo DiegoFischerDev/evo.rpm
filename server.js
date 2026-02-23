@@ -1447,16 +1447,47 @@ async function handleIncomingMessage({ remoteJid, text, instanceName, profileNam
       );
       return;
     }
-    // Qualquer outra mensagem → resposta fixa (texto conforme estado_docs só para nuance, não como condição de fluxo)
+    // Qualquer outra mensagem → resposta fixa. Se tiver gestora atribuída, mensagem com nome/email/WhatsApp da gestora.
+    const gestoraId = lead.gestora_id != null && lead.gestora_id !== '' ? Number(lead.gestora_id) : null;
+    if (gestoraId) {
+      const gestora = await db.getGestoraById(gestoraId).catch(() => null);
+      if (gestora && (gestora.nome || gestora.email || gestora.whatsapp)) {
+        const nomeGestora = gestora.nome || 'Gestora';
+        const emailGestora = gestora.email || '';
+        const docsEnviados = lead.estado_docs === 'docs_enviados';
+        let msg =
+          docsEnviados
+            ? `Sua gestora (${nomeGestora}) já recebeu os seus documentos.`
+            : `Sua gestora (${nomeGestora}) está aguardando o envio dos seus documentos para início da sua análise.`;
+        if (emailGestora) {
+          msg += ' Você pode contactá-la pelo email ' + emailGestora;
+          if (gestora.whatsapp) msg += ' ou pelo whatsapp, clicando no link:';
+          else msg += '.';
+        } else if (gestora.whatsapp) {
+          msg += ' Você pode contactá-la pelo whatsapp, clicando no link:';
+        } else {
+          msg += ' Em breve ela entrará em contacto.';
+        }
+        await sendText(instanceName, remoteJid, msg);
+        if (gestora.whatsapp) {
+          const waLink = 'https://wa.me/' + gestora.whatsapp;
+          await sendText(instanceName, remoteJid, waLink, { skipJoanaPrefix: true });
+        }
+        return;
+      }
+    }
     const msgDocsEnviados =
       'Se tua duvida é sobre credito habitação escreve DUVIDA, mas se é em relação ao seu processo ou sobre envio de documentos, escreve FALAR COM RAFA que a produção vem aqui te ajudar 😊';
     const msgAguardandoDocs =
       'Se tua duvida é sobre credito habitação escreve DUVIDA, mas se é em relação a algum bug ou dificuldade para enviar os documentos, escreve FALAR COM RAFA que a produção vem aqui te ajudar 😊';
+    const msgBase = lead.estado_docs === 'docs_enviados' ? msgDocsEnviados : msgAguardandoDocs;
     await sendText(
       instanceName,
       remoteJid,
-      lead.estado_docs === 'docs_enviados' ? msgDocsEnviados : msgAguardandoDocs
+      msgBase + ' E se quiser enviar seus documentos para iniciar análise gratuita da gestora, utilize o link:'
     );
+    const uploadLink = `${process.env.UPLOAD_BASE_URL || 'https://ia.rafaapelomundo.com'}/upload/${lead.id}`;
+    await sendText(instanceName, remoteJid, uploadLink, { skipJoanaPrefix: true });
     return;
   }
 

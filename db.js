@@ -171,6 +171,24 @@ async function deleteBoasVindasStep(id) {
   await query('DELETE FROM ch_boas_vindas_queue WHERE id = ?', [id]);
 }
 
+/** Dados da gestora para contacto pelo lead (nome, email para exibir, whatsapp). */
+async function getGestoraById(gestoraId) {
+  if (!gestoraId) return null;
+  const rows = await query(
+    'SELECT nome, email, email_para_leads, whatsapp FROM ch_gestoras WHERE id = ? LIMIT 1',
+    [gestoraId]
+  );
+  const r = rows[0];
+  if (!r) return null;
+  const email = (r.email_para_leads && String(r.email_para_leads).trim()) || (r.email && String(r.email).trim()) || '';
+  const whatsapp = (r.whatsapp && String(r.whatsapp).replace(/\D/g, '')) || '';
+  return {
+    nome: (r.nome && String(r.nome).trim()) || 'Gestora',
+    email,
+    whatsapp: whatsapp || null,
+  };
+}
+
 module.exports = {
   getPool,
   query,
@@ -186,5 +204,6 @@ module.exports = {
   insertBoasVindasSteps,
   getDueBoasVindasSteps,
   deleteBoasVindasStep,
+  getGestoraById,
 };
 
