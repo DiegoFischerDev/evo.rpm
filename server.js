@@ -1195,7 +1195,7 @@ async function handleIncomingMessage({ remoteJid, text, instanceName, profileNam
     await sendText(
       instanceName,
       remoteJid,
-      `${saudacaoNome}Vou te ajudar por aqui 🙂\r\n\r\nPara começar, escreve:\r\n\r\nDUVIDA - se tens dúvidas sobre crédito habitação\r\n\r\nGESTORA - se já queres falar com a gestora para iniciar a sua análise\r\n\r\nSIMULADOR - para simular a primeira parcela do crédito\r\n\r\nFALAR COM RAFA - se precisas falar diretamente com a Rafa`
+      `${saudacaoNome}Vou te ajudar por aqui 🙂\r\n\r\nPara começar, escreve:\r\n\r\nDUVIDA - se tens dúvidas sobre crédito habitação\r\n\r\nGESTORA - se queres que a gestora inicie a analise do teu caso gratuitamente\r\n\r\nSIMULADOR - para simular a primeira parcela do crédito\r\n\r\nFALAR COM RAFA - se precisas falar diretamente com a Rafa`
     );
     return;
   }
@@ -1219,7 +1219,7 @@ async function handleIncomingMessage({ remoteJid, text, instanceName, profileNam
       await sendText(
         instanceName,
         remoteJid,
-        `${saudacaoNome}Vou te ajudar por aqui 🙂\r\n\r\nPara começar, escreve:\r\n\r\nDUVIDA - se tens dúvidas sobre crédito habitação\r\n\r\nSIMULADOR - para simular a primeira parcela do crédito\r\n\r\nGESTORA - se já queres falar com a gestora para iniciar a sua análise\r\n\r\nFALAR COM RAFA - se precisas falar diretamente com a Rafa`
+        `${saudacaoNome}Vou te ajudar por aqui 🙂\r\n\r\nPara começar, escreve:\r\n\r\nDUVIDA - se tens dúvidas sobre crédito habitação\r\n\r\nSIMULADOR - para simular a primeira parcela do crédito\r\n\r\nGESTORA - se queres que a gestora inicie a analise do teu caso gratuitamente\r\n\r\nFALAR COM RAFA - se precisas falar diretamente com a Rafa`
       );
     }
     return;
@@ -1242,7 +1242,7 @@ async function handleIncomingMessage({ remoteJid, text, instanceName, profileNam
       await sendText(
         instanceName,
         remoteJid,
-        `${saudacaoNome}Vou te ajudar por aqui 🙂\r\n\r\nPara começar, escreve:\r\n\r\nDUVIDA - se tens dúvidas sobre crédito habitação\r\n\r\nSIMULADOR - para simular a primeira parcela do crédito\r\n\r\nGESTORA - se já queres falar com a gestora para iniciar a sua análise\r\n\r\nFALAR COM RAFA - se precisas falar diretamente com a Rafa`
+        `${saudacaoNome}Vou te ajudar por aqui 🙂\r\n\r\nPara começar, escreve:\r\n\r\nDUVIDA - se tens dúvidas sobre crédito habitação\r\n\r\nSIMULADOR - para simular a primeira parcela do crédito\r\n\r\nGESTORA - se queres que a gestora inicie a analise do teu caso gratuitamente\r\n\r\nFALAR COM RAFA - se precisas falar diretamente com a Rafa`
       );
       return;
     }
@@ -1275,8 +1275,9 @@ async function handleIncomingMessage({ remoteJid, text, instanceName, profileNam
       await sendText(
         instanceName,
         remoteJid,
-        `Ótimo! Para começar, preciso que envies alguns documentos por este link: ${uploadLink}. Esses documentos são confidenciais e apenas a gestora terá acesso a eles.`
+        'Ótimo! Para que a gestora inicie a análise do seu caso, você precisa enviar alguns documentos. Esses documentos podem ser enviados diretamente para ela através dessa plataforma:'
       );
+      await sendText(instanceName, remoteJid, uploadLink);
       return;
     }
     return;
@@ -1307,8 +1308,9 @@ async function handleIncomingMessage({ remoteJid, text, instanceName, profileNam
         await sendText(
           instanceName,
           remoteJid,
-          `Perfeito! Para avançarmos, usa este link para enviar os documentos: ${uploadLink}. Esses documentos são confidenciais e apenas a gestora terá acesso a eles.`
+          'Ótimo! Para que a gestora inicie a análise do seu caso, você precisa enviar alguns documentos. Esses documentos podem ser enviados diretamente para ela através dessa plataforma:'
         );
+        await sendText(instanceName, remoteJid, uploadLink);
         return;
       }
       if (isCommand(text, CMD_FALAR_COM_RAFA)) {
@@ -1347,7 +1349,7 @@ async function handleIncomingMessage({ remoteJid, text, instanceName, profileNam
     await sendText(
       instanceName,
       remoteJid,
-      `${saudacaoNome}Vou te ajudar por aqui 🙂\r\n\r\nPara começar, escreve:\r\n\r\nDUVIDA - se tens dúvidas sobre crédito habitação\r\n\r\nSIMULADOR - para simular a primeira parcela do crédito\r\n\r\nGESTORA - se já queres falar com a gestora para iniciar a sua análise\r\n\r\nFALAR COM RAFA - se precisas falar diretamente com a Rafa`
+      `${saudacaoNome}Vou te ajudar por aqui 🙂\r\n\r\nPara começar, escreve:\r\n\r\nDUVIDA - se tens dúvidas sobre crédito habitação\r\n\r\nSIMULADOR - para simular a primeira parcela do crédito\r\n\r\nGESTORA - se queres que a gestora inicie a analise do teu caso gratuitamente\r\n\r\nFALAR COM RAFA - se precisas falar diretamente com a Rafa`
     );
     return;
   }
@@ -1381,8 +1383,9 @@ async function handleIncomingMessage({ remoteJid, text, instanceName, profileNam
       await sendText(
         instanceName,
         remoteJid,
-        `Ótimo! Para começar, preciso que envies alguns documentos por este link: ${uploadLink}. Esses documentos são confidenciais e apenas a gestora terá acesso a eles.`
+        'Ótimo! Para que a gestora inicie a análise do seu caso, você precisa enviar alguns documentos. Esses documentos podem ser enviados diretamente para ela através dessa plataforma:'
       );
+      await sendText(instanceName, remoteJid, uploadLink);
       return;
     }
     if (isCommand(text, CMD_FALAR_COM_RAFA)) {
@@ -1427,8 +1430,9 @@ async function handleIncomingMessage({ remoteJid, text, instanceName, profileNam
       await sendText(
         instanceName,
         remoteJid,
-        `Perfeito! Para avançarmos, usa este link para enviar os documentos: ${uploadLink}. Esses documentos são confidenciais e apenas a gestora terá acesso a eles.`
+        'Ótimo! Para que a gestora inicie a análise do seu caso, você precisa enviar alguns documentos. Esses documentos podem ser enviados diretamente para ela através dessa plataforma:'
       );
+      await sendText(instanceName, remoteJid, uploadLink);
       return;
     }
     if (isCommand(text, CMD_FALAR_COM_RAFA)) {
@@ -1480,8 +1484,9 @@ async function handleIncomingMessage({ remoteJid, text, instanceName, profileNam
       await sendText(
         instanceName,
         remoteJid,
-        `Perfeito! Para avançarmos, usa este link para enviar os documentos: ${uploadLink}. Esses documentos são confidenciais e apenas a gestora terá acesso a eles.`
+        'Ótimo! Para que a gestora inicie a análise do seu caso, você precisa enviar alguns documentos. Esses documentos podem ser enviados diretamente para ela através dessa plataforma:'
       );
+      await sendText(instanceName, remoteJid, uploadLink);
       return;
     }
     if (isCommand(text, CMD_FALAR_COM_RAFA)) {
@@ -1557,8 +1562,9 @@ async function handleIncomingMessage({ remoteJid, text, instanceName, profileNam
       await sendText(
         instanceName,
         remoteJid,
-        `Perfeito! Para avançarmos, usa este link para enviar os documentos: ${uploadLink}. Esses documentos são confidenciais e apenas a gestora terá acesso a eles.`
+        'Ótimo! Para que a gestora inicie a análise do seu caso, você precisa enviar alguns documentos. Esses documentos podem ser enviados diretamente para ela através dessa plataforma:'
       );
+      await sendText(instanceName, remoteJid, uploadLink);
       return;
     }
   }

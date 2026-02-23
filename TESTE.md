@@ -90,3 +90,73 @@ Deve devolver `OK` (200). Isto não simula uma mensagem real, só confirma que a
 | Evo não responde no WhatsApp | Ver `/api/debug` (Evolution URL/apikey, estado da instância) e logs do Evo na Hostinger. |
 
 Depois de o QR estar escaneado e o `/api/debug` mostrar `evolution.ok: true` e estado ligado, envia uma mensagem para o número da "Joana" e a resposta da IA deve aparecer no WhatsApp.
+
+---
+
+## 5. Troubleshooting Evolution API
+
+### Restart da instância (404 "Cannot GET /instance/restart/...")
+
+O endpoint de **restart** na Evolution API é **PUT**, não GET. Se usares GET recebes 404.
+
+**Correto:**
+
+```bash
+curl -X PUT -H "apikey: Raf@@pelomundo645061" "http://72.60.45.216:8080/instance/restart/DiegoWoo"
+```
+
+Resposta esperada: `{"instance":{"instanceName":"DiegoWoo","state":"open"}}` (ou similar).
+
+Doc: https://doc.evolution-api.com/v1/api-reference/instance-controller/restart-instance
+
+### Mensagens não são enviadas
+
+Se o `fetchInstances` mostra a instância com `connectionStatus: "open"` mas as mensagens não saem:
+
+1. **API key** – O Evo envia o header `apikey` em todas as chamadas. Confirma que `EVOLUTION_API_KEY` no `.env` do Evo é exatamente a mesma que a Evolution espera.
+2. **URL base** – Sem barra no fim: `http://72.60.45.216:8080` (não `...8080/`).
+3. **Nome da instância** – `EVOLUTION_INSTANCE` no Evo tem de ser exatamente o nome devolvido pela Evolution (ex.: `DiegoWoo`).
+4. **Ver erro da Evolution** – Testar envio manual para ver a resposta:
+   ```bash
+   curl -X POST "http://72.60.45.216:8080/message/sendText/DiegoWoo" \
+     -H "Content-Type: application/json" \
+     -H "apikey: TUA_API_KEY" \
+     -d '{"number":"351912345678","text":"Teste"}'
+   ```
+   Se a tua Evolution for v1, o path pode ser diferente (ex.: `/api/sendText` ou com prefixo). Consulta a doc da versão que tens instalada.
+5. **Logs do Evo** – Em caso de falha no envio, o Evo regista erro no log (ou no PM2). Ver stdout/stderr do processo ao enviar uma mensagem.
+
+### Ver logs da Evolution API (no VPS)
+
+Conecta-te por **SSH** ao VPS (72.60.45.216) e usa os comandos conforme instalaste a Evolution:
+
+**Se instalaste com Docker:**
+
+```bash
+# Listar contentores (ver o nome do da Evolution)
+docker ps
+
+# Ver logs em tempo real (substitui evolution-api ou o nome do contentor)
+docker logs -f evolution-api
+
+# Ou pelo ID
+docker logs -f <container_id>
+```
+
+**Se instalaste com PM2:**
+
+```bash
+# Listar processos
+pm2 list
+
+# Logs em tempo real (substitui o nome do processo se for diferente)
+pm2 logs evolution
+# ou
+pm2 logs
+```
+
+**Se corres com `npm start` ou `node` diretamente:**  
+Os logs saem no terminal onde executaste. Se usas `nohup` ou `screen`, estão no ficheiro que redirecionaste (ex.: `nohup.out`).
+
+**Útil:** Para mais detalhe da ligação WhatsApp (Baileys), define no ambiente da Evolution:  
+`LOG_LEVEL=DEBUG` e/ou `LOG_BAILEYS=debug`. Reinicia a Evolution e volta a ver os logs.
