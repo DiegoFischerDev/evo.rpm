@@ -1494,7 +1494,12 @@ async function handleIncomingMessage({ remoteJid, text, instanceName, profileNam
         await sendText(instanceName, remoteJid, msg);
         if (gestora.whatsapp) {
           const waLink = 'https://wa.me/' + gestora.whatsapp;
-          await sendText(instanceName, remoteJid, waLink, { skipJoanaPrefix: true });
+          logToWhatsApp(`[com_gestora] enviando link WhatsApp da gestora ${gestora.nome} para leadId=${lead.id}: ${waLink}`);
+          try {
+            await sendText(instanceName, remoteJid, waLink, { skipJoanaPrefix: true });
+          } catch (err) {
+            logToWhatsApp(`[com_gestora] ERRO ao enviar link WhatsApp para leadId=${lead.id}: ${err.message || err}`);
+          }
         }
         return;
       }
