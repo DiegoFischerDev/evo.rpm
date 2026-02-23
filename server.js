@@ -1447,14 +1447,20 @@ async function handleIncomingMessage({ remoteJid, text, instanceName, profileNam
       );
       return;
     }
-    // Qualquer outra mensagem → resposta fixa. Se tiver gestora atribuída, mensagem com nome/email/WhatsApp da gestora.
-    const gestoraId = lead.gestora_id != null && lead.gestora_id !== '' ? Number(lead.gestora_id) : null;
+    // Qualquer outra mensagem → resposta fixa. Se tiver gestora atribuída (ex.: após confirmar email na página de upload), mensagem com nome/email/WhatsApp da gestora.
+    // Re-buscar o lead para ter gestora_id atualizado (a atribuição é feita no ia-app ao confirmar email)
+    const leadAtual = await db.findLeadByWhatsapp(remoteJid).catch(() => lead) || lead;
+    const rawGestoraId = leadAtual.gestora_id;
+    const gestoraId = rawGestoraId != null && rawGestoraId !== '' ? (Number(rawGestoraId) || null) : null;
     if (gestoraId) {
-      const gestora = await db.getGestoraById(gestoraId).catch(() => null);
+      const gestora = await db.getGestoraById(gestoraId).catch((err) => {
+        console.error('getGestoraById', gestoraId, err.message);
+        return null;
+      });
       if (gestora && (gestora.nome || gestora.email || gestora.whatsapp)) {
         const nomeGestora = gestora.nome || 'Gestora';
         const emailGestora = gestora.email || '';
-        const docsEnviados = lead.estado_docs === 'docs_enviados';
+        const docsEnviados = (leadAtual.estado_docs || lead.estado_docs) === 'docs_enviados';
         let msg =
           docsEnviados
             ? `Sua gestora (${nomeGestora}) já recebeu os seus documentos.`
