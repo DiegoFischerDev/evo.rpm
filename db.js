@@ -148,27 +148,32 @@ async function clearSimuladorState(leadId) {
   );
 }
 
-// ---------- Fila boas-vindas (mensagens atrasadas que sobrevivem a reinício) ----------
-async function insertBoasVindasSteps(instanceName, remoteJid, msg1, msg2, msg4) {
-  await query(
-    `INSERT INTO ch_boas_vindas_queue (instance_name, remote_jid, step, execute_at, payload) VALUES
-     (?, ?, 1, DATE_ADD(NOW(), INTERVAL 15 SECOND), ?),
-     (?, ?, 2, DATE_ADD(NOW(), INTERVAL 20 SECOND), ?),
-     (?, ?, 3, DATE_ADD(NOW(), INTERVAL 90 SECOND), ?),
-     (?, ?, 4, DATE_ADD(NOW(), INTERVAL 110 SECOND), ?)`,
-    [instanceName, remoteJid, msg1, instanceName, remoteJid, msg2, instanceName, remoteJid, 'audio', instanceName, remoteJid, msg4]
-  );
-}
-
-async function getDueBoasVindasSteps() {
+// ---------- Estado de boas-vindas por lead (persistido em ch_boas_vindas_queue) ----------
+async function getBoasVindasStep(instanceName, remoteJid) {
   const rows = await query(
-    'SELECT id, instance_name, remote_jid, step, payload FROM ch_boas_vindas_queue WHERE execute_at <= NOW() ORDER BY execute_at ASC LIMIT 20'
+    'SELECT step FROM ch_boas_vindas_queue WHERE instance_name = ? AND remote_jid = ? ORDER BY id DESC LIMIT 1',
+    [instanceName, remoteJid]
   );
-  return rows || [];
+  return rows[0] ? Number(rows[0].step) : null;
 }
 
-async function deleteBoasVindasStep(id) {
-  await query('DELETE FROM ch_boas_vindas_queue WHERE id = ?', [id]);
+async function setBoasVindasStep(instanceName, remoteJid, step) {
+  // Mantemos apenas um registo por (instance_name, remote_jid) como estado atual.
+  await query('DELETE FROM ch_boas_vindas_queue WHERE instance_name = ? AND remote_jid = ?', [
+    instanceName,
+    remoteJid,
+  ]);
+  await query(
+    'INSERT INTO ch_boas_vindas_queue (instance_name, remote_jid, step, execute_at, payload) VALUES (?, ?, ?, NOW(), NULL)',
+    [instanceName, remoteJid, step]
+  );
+}
+
+async function clearBoasVindasStep(instanceName, remoteJid) {
+  await query('DELETE FROM ch_boas_vindas_queue WHERE instance_name = ? AND remote_jid = ?', [
+    instanceName,
+    remoteJid,
+  ]);
 }
 
 /** Dados da gestora para contacto pelo lead (nome, email para exibir, whatsapp). */
@@ -201,9 +206,9 @@ module.exports = {
   getSimuladorState,
   setSimuladorState,
   clearSimuladorState,
-  insertBoasVindasSteps,
-  getDueBoasVindasSteps,
-  deleteBoasVindasStep,
+  getBoasVindasStep,
+  setBoasVindasStep,
+  clearBoasVindasStep,
   getGestoraById,
 };
 

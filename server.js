@@ -1143,54 +1143,15 @@ async function handleIncomingMessage({ remoteJid, text, instanceName, profileNam
         const nome = (firstName || lead.nome || '').trim();
         const msg1 = nome ? `oi ${nome}` : 'oieee';
         const msg2 = 'Tudo bem? 😊';
-        // Mensagens de texto de boas-vindas (não quebram o fluxo se a Evolution falhar)
+        // Passo 0: enviar só as duas primeiras mensagens de texto
         try {
           await sendText(instanceName, remoteJid, msg1, boasVindasOpt);
         } catch (_) {}
         try {
           await sendText(instanceName, remoteJid, msg2, boasVindasOpt);
         } catch (_) {}
-
-        // Tentar enviar os dois áudios de boas-vindas (1 e 2). Se ambos falharem, enviar transcrição em texto.
-        let algumAudioEnviado = false;
-        if (IA_APP_BASE_URL && EVO_INTERNAL_SECRET) {
-          const baseUrl = `${IA_APP_BASE_URL}/api/internal/audios-rafa`;
-          const token = encodeURIComponent(EVO_INTERNAL_SECRET);
-          try {
-            const audio1Url = `${baseUrl}/boas_vindas?token=${token}`;
-            await sendAudio(instanceName, remoteJid, audio1Url);
-            algumAudioEnviado = true;
-          } catch (err) {
-            logToWhatsApp(
-              `[boas-vindas] erro ao enviar áudio 1 (boas_vindas) para ${remoteJid}: ${err.message || err}`
-            );
-          }
-          try {
-            const audio2Url = `${baseUrl}/boas_vindas_2?token=${token}`;
-            await sendAudio(instanceName, remoteJid, audio2Url);
-            algumAudioEnviado = true || algumAudioEnviado;
-          } catch (err) {
-            logToWhatsApp(
-              `[boas-vindas] erro ao enviar áudio 2 (boas_vindas_2) para ${remoteJid}: ${err.message || err}`
-            );
-          }
-        }
-
-        if (!algumAudioEnviado) {
-          const transcricao =
-            'Quando o assunto é crédito habitação, o mais importante é começar pelo básico: saber quanto o banco pode te emprestar e quanto vai ficar a prestação. Antes de se encantar por uma casa, é bom ter essa noção para não correr o risco de dar um passo maior que a perna. Assim você já procura dentro da sua realidade e com mais segurança.\n\n' +
-            'Principalmente a prestação mensal. No nosso caso, por exemplo, a gente sabia que até 600 euros por mês era um valor confortável. Mais do que isso já começaria a apertar o orçamento. Ter esse limite claro ajudou muito na hora de decidir e trouxe mais tranquilidade.\n\n' +
-            'Depois disso, eu sempre indico procurar uma gestora de crédito. Ela apresenta o processo a vários bancos, compara as propostas e ajuda a escolher a melhor opção — e o serviço é gratuito. No fim, você evita dor de cabeça e toma uma decisão muito mais consciente.';
-          try {
-            await sendText(instanceName, remoteJid, transcricao, boasVindasOpt);
-          } catch (_) {}
-        }
-
-        const msg4 =
-          'Criamos uma automação para ajudar no seu atendimento. É gratuito e para iniciar, basta escrever ATENDIMENTO. E qualquer coisa que precisar me chama 🤗 boa sorte!🍀';
-        try {
-          await sendText(instanceName, remoteJid, msg4, boasVindasOpt);
-        } catch (_) {}
+        // Próximo passo (ao receber a próxima mensagem do lead): enviar áudios
+        await db.setBoasVindasStep(instanceName || EVOLUTION_INSTANCE, remoteJid, 1);
       } catch (err) {
         writeLog(`handleIncomingMessage createLead (boas-vindas) ERRO: ${err.message}`);
       }
@@ -1234,6 +1195,69 @@ async function handleIncomingMessage({ remoteJid, text, instanceName, profileNam
 
   // Em boas-vindas: flow automático a correr; a Joana só responde quando o lead escreve "atendimento" (ou frase trigger) ou repete a frase de boas-vindas → passa a aguardando_escolha e envia o menu
   if (lead.estado_conversa === 'em_boas_vindas') {
+    // Novo fluxo em 3 passos, persistido no BD (ch_boas_vindas_queue):
+    // step 1 (após primeira resposta): enviar áudios 1 e 2 (ou transcrição se ambos falharem)
+    // step 2 (após segunda resposta): enviar CTA ATENDIMENTO e passar a aguardando_escolha
+    const step = await db.getBoasVindasStep(instanceName || EVOLUTION_INSTANCE, remoteJid).catch(() => null);
+    if (step === 1) {
+      let algumAudioEnviado = false;
+      if (IA_APP_BASE_URL && EVO_INTERNAL_SECRET) {
+        const baseUrl = `${IA_APP_BASE_URL}/api/internal/audios-rafa`;
+        const token = encodeURIComponent(EVO_INTERNAL_SECRET);
+        try {
+          const audio1Url = `${baseUrl}/boas_vindas?token=${token}`;
+          await sendAudio(instanceName, remoteJid, audio1Url);
+          algumAudioEnviado = true;
+        } catch (err) {
+          logToWhatsApp(
+            `[boas-vindas] erro ao enviar áudio 1 (boas_vindas) para ${remoteJid}: ${err.message || err}`
+          );
+        }
+        try {
+          const audio2Url = `${baseUrl}/boas_vindas_2?token=${token}`;
+          await sendAudio(instanceName, remoteJid, audio2Url);
+          algumAudioEnviado = true || algumAudioEnviado;
+        } catch (err) {
+          logToWhatsApp(
+            `[boas-vindas] erro ao enviar áudio 2 (boas_vindas_2) para ${remoteJid}: ${err.message || err}`
+          );
+        }
+      }
+      if (!algumAudioEnviado) {
+        const transcricao =
+          'Quando o assunto é crédito habitação, o mais importante é começar pelo básico: saber quanto o banco pode te emprestar e quanto vai ficar a prestação. Antes de se encantar por uma casa, é bom ter essa noção para não correr o risco de dar um passo maior que a perna. Assim você já procura dentro da sua realidade e com mais segurança.\n\n' +
+          'Principalmente a prestação mensal. No nosso caso, por exemplo, a gente sabia que até 600 euros por mês era um valor confortável. Mais do que isso já começaria a apertar o orçamento. Ter esse limite claro ajudou muito na hora de decidir e trouxe mais tranquilidade.\n\n' +
+          'Depois disso, eu sempre indico procurar uma gestora de crédito. Ela apresenta o processo a vários bancos, compara as propostas e ajuda a escolher a melhor opção — e o serviço é gratuito. No fim, você evita dor de cabeça e toma uma decisão muito mais consciente.';
+        try {
+          await sendText(instanceName, remoteJid, transcricao, boasVindasOpt);
+        } catch (_) {}
+      }
+      await db.setBoasVindasStep(instanceName || EVOLUTION_INSTANCE, remoteJid, 2);
+      return;
+    }
+    if (step === 2) {
+      // Enviar CTA de ATENDIMENTO e passar para aguardando_escolha (menu principal)
+      const agora = new Date();
+      const hora = agora.getHours();
+      let saudacaoTempo = '';
+      if (hora >= 5 && hora < 12) saudacaoTempo = 'bom dia!';
+      else if (hora >= 12 && hora < 18) saudacaoTempo = 'boa tarde!';
+      else saudacaoTempo = 'boa noite!';
+      const firstName = getFirstName(lead.nome) || getFirstName(profileName);
+      const saudacaoNome = firstName
+        ? `Oi ${firstName}, ${saudacaoTempo} tudo bem?\n`
+        : `Oi, ${saudacaoTempo} tudo bem?\n`;
+      const msg4 =
+        'Criamos uma automação para ajudar no seu atendimento. É gratuito e para iniciar, basta escrever ATENDIMENTO. E qualquer coisa que precisar me chama 🤗 boa sorte!🍀';
+      try {
+        await sendText(instanceName, remoteJid, msg4, boasVindasOpt);
+      } catch (_) {}
+      await db.clearBoasVindasStep(instanceName || EVOLUTION_INSTANCE, remoteJid);
+      await db.updateLeadState(lead.id, { conversa: 'aguardando_escolha' });
+      // Em seguida, ao escrever ATENDIMENTO ou outra palavra trigger, o lead cai no menu normal.
+      return;
+    }
+    // Se não houver step registado, volta ao comportamento antigo:
     if (isTriggerPhrase(cleanText) || isBoasVindasFlowTrigger(text)) {
       await db.updateLeadState(lead.id, { conversa: 'aguardando_escolha' });
       const agora = new Date();
