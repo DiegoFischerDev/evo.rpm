@@ -649,63 +649,7 @@ async function sendText(instanceName, remoteJid, text, options) {
   );
 }
 
-/**
- * Fluxo de boas-vindas com mensagens atrasadas (trigger: "Ola, gostaria de ajuda para conseguir meu credito habitação em portugal").
- * Passos são guardados na fila ch_boas_vindas_queue e processados por um job a cada 12s, para sobreviver a reinícios do processo.
- * 1) 15s: oi (nome)
- * 2) +5s: Tudo bem? 😊 + presence "recording"
- * 3) +70s: áudio de boas vindas (ia-app)
- * 4) +20s: texto final com "atendimento" e boa sorte
- */
-async function runBoasVindasFlow(instanceName, remoteJid, firstName) {
-  const nome = (firstName || '').trim();
-  const msg1 = nome ? `oi ${nome}` : 'oieee';
-  const msg2 = 'Tudo bem? 😊';
-  const msg4 =
-    'Criamos uma automação para ajudar no seu atendimento. É gratuito e para iniciar, basta escrever "atendimento". E qualquer coisa que precisar me chama 🤗 boa sorte!🍀';
-
-  try {
-    await db.insertBoasVindasSteps(instanceName, remoteJid, msg1, msg2, msg4);
-  } catch (err) {
-    writeLog(`boas-vindas queue insert failed: ${err.message}`);
-  }
-}
-
 const boasVindasOpt = { skipJoanaPrefix: true };
-
-async function processBoasVindasQueue() {
-  let rows;
-  try {
-    rows = await db.getDueBoasVindasSteps();
-  } catch (err) {
-    writeLog(`boas-vindas getDue failed: ${err.message}`);
-    return;
-  }
-  for (const row of rows || []) {
-    const { id, instance_name, remote_jid, step, payload } = row;
-    try {
-      if (step === 1 || step === 2 || step === 4) {
-        const text = payload || '';
-        await sendText(instance_name, remote_jid, text, boasVindasOpt);
-        if (step === 2) {
-          sendPresence(instance_name, remote_jid, 'recording', 70 * 1000).catch(() => {});
-        }
-      } else if (step === 3) {
-        if (IA_APP_BASE_URL && EVO_INTERNAL_SECRET) {
-          const audioUrl = `${IA_APP_BASE_URL}/api/internal/audios-rafa/boas_vindas?token=${encodeURIComponent(EVO_INTERNAL_SECRET)}`;
-          await sendAudio(instance_name, remote_jid, audioUrl);
-        }
-      }
-    } catch (err) {
-      writeLog(`boas-vindas step ${step} error: ${err?.response?.data ? JSON.stringify(err.response.data) : err.message}`);
-    }
-    try {
-      await db.deleteBoasVindasStep(id);
-    } catch (e) {
-      writeLog(`boas-vindas delete step ${id} failed: ${e.message}`);
-    }
-  }
-}
 
 // Envio de presence (composing = "a escrever...", recording = "a gravar áudio...")
 // Evolution API: POST /chat/sendPresence/{instance} com body { number, presence, delay } (presence e delay no topo).
@@ -1172,7 +1116,22 @@ async function handleIncomingMessage({ remoteJid, text, instanceName, profileNam
           origemInstancia: instanceName,
           estadoConversa: 'em_boas_vindas',
         });
-        runBoasVindasFlow(instanceName, remoteJid, firstName || lead.nome);
+        const nome = (firstName || lead.nome || '').trim();
+        const msg1 = nome ? `oi ${nome}` : 'oieee';
+        const msg2 = 'Tudo bem? 😊';
+        await sendText(instanceName, remoteJid, msg1, boasVindasOpt);
+        await sendText(instanceName, remoteJid, msg2, boasVindasOpt);
+        if (IA_APP_BASE_URL && EVO_INTERNAL_SECRET) {
+          const audioUrl = `${IA_APP_BASE_URL}/api/internal/audios-rafa/boas_vindas?token=${encodeURIComponent(EVO_INTERNAL_SECRET)}`;
+          try {
+            await sendAudio(instanceName, remoteJid, audioUrl);
+          } catch (err) {
+            logToWhatsApp(`[boas-vindas] erro ao enviar áudio para ${remoteJid}: ${err.message || err}`);
+          }
+        }
+        const msg4 =
+          'Criamos uma automação para ajudar no seu atendimento. É gratuito e para iniciar, basta escrever ATENDIMENTO. E qualquer coisa que precisar me chama 🤗 boa sorte!🍀';
+        await sendText(instanceName, remoteJid, msg4, boasVindasOpt);
       } catch (err) {
         writeLog(`handleIncomingMessage createLead (boas-vindas) ERRO: ${err.message}`);
         throw err;
@@ -1717,5 +1676,4 @@ app.get('/', (req, res) => {
 
 app.listen(PORT, '0.0.0.0', () => {
   console.log(`Evo ouvindo na porta ${PORT}`);
-  setInterval(processBoasVindasQueue, 12 * 1000);
 });
