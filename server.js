@@ -89,8 +89,10 @@ app.post('/api/internal/send-text', (req, res) => {
   sendText(null, number, text)
     .then(() => res.json({ ok: true }))
     .catch((err) => {
-      console.error('send-text:', err.message);
-      res.status(500).json({ message: err.response?.data?.message || err.message });
+      const detail = err.response?.data?.message || err.message;
+      console.error('send-text:', detail);
+      logToWhatsApp('Erro em /api/internal/send-text: ' + detail);
+      res.status(500).json({ message: detail });
     });
 });
 
@@ -105,8 +107,10 @@ app.post('/api/internal/send-audio', (req, res) => {
   sendAudio(null, number, audioUrl)
     .then(() => res.json({ ok: true }))
     .catch((err) => {
-      console.error('send-audio:', err.message);
-      res.status(500).json({ message: err.response?.data?.message || err.message });
+      const detail = err.response?.data?.message || err.message;
+      console.error('send-audio:', detail);
+      logToWhatsApp('Erro em /api/internal/send-audio: ' + detail);
+      res.status(500).json({ message: detail });
     });
 });
 
@@ -616,7 +620,9 @@ function scheduleDuvidaBufferReminder(instanceName, leadId, remoteJid) {
 
 async function sendText(instanceName, remoteJid, text, options) {
   if (!EVOLUTION_URL || !EVOLUTION_API_KEY) {
-    console.warn('EVOLUTION_API_URL ou EVOLUTION_API_KEY não configuradas – resposta não enviada');
+    const msg = 'EVOLUTION_API_URL ou EVOLUTION_API_KEY não configuradas – resposta não enviada';
+    console.warn(msg);
+    logToWhatsApp(msg);
     return;
   }
   const instance = instanceName || EVOLUTION_INSTANCE;
@@ -636,17 +642,25 @@ async function sendText(instanceName, remoteJid, text, options) {
       finalText = prefix + finalText;
     }
   }
-  await axios.post(
-    `${EVOLUTION_URL}/message/sendText/${instance}`,
-    { number, text: finalText },
-    {
-      headers: {
-        'Content-Type': 'application/json',
-        apikey: EVOLUTION_API_KEY,
-      },
-      timeout: 15000,
-    }
-  );
+  try {
+    await axios.post(
+      `${EVOLUTION_URL}/message/sendText/${instance}`,
+      { number, text: finalText },
+      {
+        headers: {
+          'Content-Type': 'application/json',
+          apikey: EVOLUTION_API_KEY,
+        },
+        timeout: 15000,
+      }
+    );
+  } catch (err) {
+    const base = 'Erro ao enviar mensagem para Evolution';
+    const detail = err.response?.data ? JSON.stringify(err.response.data) : err.message;
+    console.error(base + ':', detail);
+    logToWhatsApp(base + ': ' + detail);
+    throw err;
+  }
 }
 
 const boasVindasOpt = { skipJoanaPrefix: true };
@@ -684,7 +698,9 @@ async function sendPresence(instanceName, remoteJid, presence, delayMs) {
 // Envio de áudio (quando houver resposta em áudio no FAQ)
 async function sendAudio(instanceName, remoteJid, audioUrl) {
   if (!EVOLUTION_URL || !EVOLUTION_API_KEY) {
-    console.warn('EVOLUTION_API_URL ou EVOLUTION_API_KEY não configuradas – áudio não enviado');
+    const msg = 'EVOLUTION_API_URL ou EVOLUTION_API_KEY não configuradas – áudio não enviado';
+    console.warn(msg);
+    logToWhatsApp(msg);
     return;
   }
   const instance = instanceName || EVOLUTION_INSTANCE;
@@ -695,17 +711,25 @@ async function sendAudio(instanceName, remoteJid, audioUrl) {
   if (!number) return;
   const url = (audioUrl || '').trim();
   if (!url) return;
-  await axios.post(
-    `${EVOLUTION_URL}/message/sendWhatsAppAudio/${instance}`,
-    { number, audio: url },
-    {
-      headers: {
-        'Content-Type': 'application/json',
-        apikey: EVOLUTION_API_KEY,
-      },
-      timeout: 20000,
-    }
-  );
+  try {
+    await axios.post(
+      `${EVOLUTION_URL}/message/sendWhatsAppAudio/${instance}`,
+      { number, audio: url },
+      {
+        headers: {
+          'Content-Type': 'application/json',
+          apikey: EVOLUTION_API_KEY,
+        },
+        timeout: 20000,
+      }
+    );
+  } catch (err) {
+    const base = 'Erro ao enviar áudio para Evolution';
+    const detail = err.response?.data ? JSON.stringify(err.response.data) : err.message;
+    console.error(base + ':', detail);
+    logToWhatsApp(base + ': ' + detail);
+    throw err;
+  }
 }
 
 // Notifica o administrador (Rafa) quando um lead pede "Falar com rafa": mensagem + link wa.me com texto pré-preenchido.
@@ -1122,12 +1146,21 @@ async function handleIncomingMessage({ remoteJid, text, instanceName, profileNam
         await sendText(instanceName, remoteJid, msg1, boasVindasOpt);
         await sendText(instanceName, remoteJid, msg2, boasVindasOpt);
         if (IA_APP_BASE_URL && EVO_INTERNAL_SECRET) {
-          // Voltar a usar o áudio 1 (boas_vindas) como boas-vindas principal.
-          const audioUrl = `${IA_APP_BASE_URL}/api/internal/audios-rafa/boas_vindas?token=${encodeURIComponent(EVO_INTERNAL_SECRET)}`;
+          const baseUrl = `${IA_APP_BASE_URL}/api/internal/audios-rafa`;
+          const token = encodeURIComponent(EVO_INTERNAL_SECRET);
+          // Áudio 1
           try {
-            await sendAudio(instanceName, remoteJid, audioUrl);
+            const audio1Url = `${baseUrl}/boas_vindas?token=${token}`;
+            await sendAudio(instanceName, remoteJid, audio1Url);
           } catch (err) {
-            logToWhatsApp(`[boas-vindas] erro ao enviar áudio para ${remoteJid}: ${err.message || err}`);
+            logToWhatsApp(`[boas-vindas] erro ao enviar áudio 1 (boas_vindas) para ${remoteJid}: ${err.message || err}`);
+          }
+          // Áudio 2
+          try {
+            const audio2Url = `${baseUrl}/boas_vindas_2?token=${token}`;
+            await sendAudio(instanceName, remoteJid, audio2Url);
+          } catch (err) {
+            logToWhatsApp(`[boas-vindas] erro ao enviar áudio 2 (boas_vindas_2) para ${remoteJid}: ${err.message || err}`);
           }
         }
         const msg4 =
@@ -1425,22 +1458,12 @@ async function handleIncomingMessage({ remoteJid, text, instanceName, profileNam
     const leadAtual = await db.findLeadByWhatsapp(remoteJid).catch(() => lead) || lead;
     const rawGestoraId = leadAtual.gestora_id ?? leadAtual.Gestora_id;
     const gestoraId = rawGestoraId != null && rawGestoraId !== '' ? (Number(rawGestoraId) || null) : null;
-    logToWhatsApp(`[com_gestora] leadId=${lead.id} gestora_id(raw)=${rawGestoraId} gestoraId=${gestoraId}`);
     if (gestoraId) {
-      const gestora = await db.getGestoraById(gestoraId).catch((err) => {
-        logToWhatsApp(`getGestoraById ${gestoraId} ERRO: ${err.message}`);
-        return null;
-      });
-      if (!gestora || !(gestora.nome || gestora.email || gestora.whatsapp)) {
-        logToWhatsApp(`[com_gestora] gestora não usada: getGestoraById(${gestoraId}) => ${gestora ? 'dados vazios' : 'null'}`);
-      }
+      const gestora = await db.getGestoraById(gestoraId).catch(() => null);
       if (gestora && (gestora.nome || gestora.email || gestora.whatsapp)) {
         const nomeGestora = gestora.nome || 'Gestora';
         const emailGestora = gestora.email || '';
         const numeroWhatsapp = gestora.whatsapp ? '+' + gestora.whatsapp : '';
-        if (emailGestora && !numeroWhatsapp) {
-          logToWhatsApp(`[com_gestora] gestora ${nomeGestora} (id=${gestoraId}) sem número WhatsApp no DB – leadId=${lead.id}`);
-        }
         const docsEnviados = (leadAtual.estado_docs || lead.estado_docs) === 'docs_enviados';
         let msg =
           docsEnviados
