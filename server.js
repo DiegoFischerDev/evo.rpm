@@ -1478,6 +1478,9 @@ async function handleIncomingMessage({ remoteJid, text, instanceName, profileNam
         const nomeGestora = gestora.nome || 'Gestora';
         const emailGestora = gestora.email || '';
         const numeroWhatsapp = gestora.whatsapp ? '+' + gestora.whatsapp : '';
+        if (emailGestora && !numeroWhatsapp) {
+          logToWhatsApp(`[com_gestora] gestora ${nomeGestora} (id=${gestoraId}) sem número WhatsApp no DB – leadId=${lead.id}`);
+        }
         const docsEnviados = (leadAtual.estado_docs || lead.estado_docs) === 'docs_enviados';
         let msg =
           docsEnviados
@@ -1492,6 +1495,16 @@ async function handleIncomingMessage({ remoteJid, text, instanceName, profileNam
           msg += ' Em breve ela entrará em contacto.';
         }
         await sendText(instanceName, remoteJid, msg);
+        // Se ainda está aguardando documentos, reforçar o link de upload logo a seguir
+        if (!docsEnviados) {
+          const uploadLink = `${process.env.UPLOAD_BASE_URL || 'https://ia.rafaapelomundo.com'}/upload/${lead.id}`;
+          await sendText(
+            instanceName,
+            remoteJid,
+            'Para enviar os documentos necessário aceda ao link:'
+          );
+          await sendText(instanceName, remoteJid, uploadLink, { skipJoanaPrefix: true });
+        }
         return;
       }
     }
