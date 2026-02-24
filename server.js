@@ -660,7 +660,7 @@ async function sendText(instanceName, remoteJid, text, options) {
     const detail = err.response?.data ? JSON.stringify(err.response.data) : err.message;
     console.error(base + ':', detail);
     logToWhatsApp(base + ': ' + detail);
-    throw err;
+    // Não lançar erro aqui para não quebrar o fluxo da conversa
   }
 }
 
@@ -729,7 +729,7 @@ async function sendAudio(instanceName, remoteJid, audioUrl) {
     const detail = err.response?.data ? JSON.stringify(err.response.data) : err.message;
     console.error(base + ':', detail);
     logToWhatsApp(base + ': ' + detail);
-    throw err;
+    // Não lançar erro aqui para não quebrar o fluxo da conversa
   }
 }
 
