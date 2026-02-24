@@ -85,8 +85,9 @@ app.post('/api/internal/send-text', (req, res) => {
   }
   const number = (req.body && req.body.number && String(req.body.number).replace(/\D/g, '')) || '';
   const text = (req.body && req.body.text && String(req.body.text)) || '';
+  const skip = !!(req.body && req.body.skipJoanaPrefix === true);
   if (!number || !text) return res.status(400).json({ message: 'number e text são obrigatórios.' });
-  sendText(null, number, text)
+  sendText(null, number, text, skip ? { skipJoanaPrefix: true } : undefined)
     .then(() => res.json({ ok: true }))
     .catch((err) => {
       const detail = err.response?.data?.message || err.message;
