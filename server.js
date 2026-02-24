@@ -1122,7 +1122,8 @@ async function handleIncomingMessage({ remoteJid, text, instanceName, profileNam
         await sendText(instanceName, remoteJid, msg1, boasVindasOpt);
         await sendText(instanceName, remoteJid, msg2, boasVindasOpt);
         if (IA_APP_BASE_URL && EVO_INTERNAL_SECRET) {
-          const audioUrl = `${IA_APP_BASE_URL}/api/internal/audios-rafa/boas_vindas?token=${encodeURIComponent(EVO_INTERNAL_SECRET)}`;
+          // Usar \"boas_vindas_2\" como novo áudio de boas-vindas (mantendo o antigo preservado na BD).
+          const audioUrl = `${IA_APP_BASE_URL}/api/internal/audios-rafa/boas_vindas_2?token=${encodeURIComponent(EVO_INTERNAL_SECRET)}`;
           try {
             await sendAudio(instanceName, remoteJid, audioUrl);
           } catch (err) {
