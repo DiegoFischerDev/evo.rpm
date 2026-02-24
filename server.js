@@ -1143,40 +1143,37 @@ async function handleIncomingMessage({ remoteJid, text, instanceName, profileNam
         const nome = (firstName || lead.nome || '').trim();
         const msg1 = nome ? `oi ${nome}` : 'oieee';
         const msg2 = 'Tudo bem? 😊';
-        await sendText(instanceName, remoteJid, msg1, boasVindasOpt);
-        await sendText(instanceName, remoteJid, msg2, boasVindasOpt);
+        // Mensagens de texto de boas-vindas (não quebram o fluxo se a Evolution falhar)
+        try {
+          await sendText(instanceName, remoteJid, msg1, boasVindasOpt);
+        } catch (_) {}
+        try {
+          await sendText(instanceName, remoteJid, msg2, boasVindasOpt);
+        } catch (_) {}
 
+        // Tentar enviar os dois áudios de boas-vindas (1 e 2). Se ambos falharem, enviar transcrição em texto.
         let algumAudioEnviado = false;
         if (IA_APP_BASE_URL && EVO_INTERNAL_SECRET) {
           const baseUrl = `${IA_APP_BASE_URL}/api/internal/audios-rafa`;
           const token = encodeURIComponent(EVO_INTERNAL_SECRET);
-          const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
-
-          async function enviarAudioComRetry(label, pathCodigo) {
-            const url = `${baseUrl}/${pathCodigo}?token=${token}`;
-            try {
-              await sendAudio(instanceName, remoteJid, url);
-              return true;
-            } catch (err) {
-              logToWhatsApp(
-                `[boas-vindas] erro ao enviar áudio ${label} (1ª tentativa) para ${remoteJid}: ${err.message || err}`
-              );
-              await sleep(1500);
-              try {
-                await sendAudio(instanceName, remoteJid, url);
-                return true;
-              } catch (err2) {
-                logToWhatsApp(
-                  `[boas-vindas] erro ao enviar áudio ${label} (2ª tentativa) para ${remoteJid}: ${err2.message || err2}`
-                );
-                return false;
-              }
-            }
+          try {
+            const audio1Url = `${baseUrl}/boas_vindas?token=${token}`;
+            await sendAudio(instanceName, remoteJid, audio1Url);
+            algumAudioEnviado = true;
+          } catch (err) {
+            logToWhatsApp(
+              `[boas-vindas] erro ao enviar áudio 1 (boas_vindas) para ${remoteJid}: ${err.message || err}`
+            );
           }
-
-          const ok1 = await enviarAudioComRetry('boas_vindas', 'boas_vindas');
-          const ok2 = await enviarAudioComRetry('boas_vindas_2', 'boas_vindas_2');
-          algumAudioEnviado = ok1 || ok2;
+          try {
+            const audio2Url = `${baseUrl}/boas_vindas_2?token=${token}`;
+            await sendAudio(instanceName, remoteJid, audio2Url);
+            algumAudioEnviado = true || algumAudioEnviado;
+          } catch (err) {
+            logToWhatsApp(
+              `[boas-vindas] erro ao enviar áudio 2 (boas_vindas_2) para ${remoteJid}: ${err.message || err}`
+            );
+          }
         }
 
         if (!algumAudioEnviado) {
@@ -1184,15 +1181,18 @@ async function handleIncomingMessage({ remoteJid, text, instanceName, profileNam
             'Quando o assunto é crédito habitação, o mais importante é começar pelo básico: saber quanto o banco pode te emprestar e quanto vai ficar a prestação. Antes de se encantar por uma casa, é bom ter essa noção para não correr o risco de dar um passo maior que a perna. Assim você já procura dentro da sua realidade e com mais segurança.\n\n' +
             'Principalmente a prestação mensal. No nosso caso, por exemplo, a gente sabia que até 600 euros por mês era um valor confortável. Mais do que isso já começaria a apertar o orçamento. Ter esse limite claro ajudou muito na hora de decidir e trouxe mais tranquilidade.\n\n' +
             'Depois disso, eu sempre indico procurar uma gestora de crédito. Ela apresenta o processo a vários bancos, compara as propostas e ajuda a escolher a melhor opção — e o serviço é gratuito. No fim, você evita dor de cabeça e toma uma decisão muito mais consciente.';
-          await sendText(instanceName, remoteJid, transcricao, boasVindasOpt);
+          try {
+            await sendText(instanceName, remoteJid, transcricao, boasVindasOpt);
+          } catch (_) {}
         }
 
         const msg4 =
           'Criamos uma automação para ajudar no seu atendimento. É gratuito e para iniciar, basta escrever ATENDIMENTO. E qualquer coisa que precisar me chama 🤗 boa sorte!🍀';
-        await sendText(instanceName, remoteJid, msg4, boasVindasOpt);
+        try {
+          await sendText(instanceName, remoteJid, msg4, boasVindasOpt);
+        } catch (_) {}
       } catch (err) {
         writeLog(`handleIncomingMessage createLead (boas-vindas) ERRO: ${err.message}`);
-        throw err;
       }
       return;
     }
